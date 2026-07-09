@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: provenanced
+    static_configs:
+      - targets:
+          - val-1:9090
+          - val-2:9090
+          - val-3:9090
+          - val-4:9090
+          - val-5:9090
+        labels:
+          group: validators

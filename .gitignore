@@ -1,0 +1,11 @@
+bin/
+*.cbor
+*.key
+*.pem
+.env
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store

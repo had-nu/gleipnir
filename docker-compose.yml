@@ -1,0 +1,94 @@
+version: "3.9"
+
+x-validator: &validator
+  build: .
+  entrypoint: ["provenanced"]
+  networks: [prana-net]
+  volumes:
+    - uids:/uids
+    - data:/data
+  environment:
+    PRANA_LOG_LEVEL: &log-level info
+    PRANA_GRPC_PORT: "50051"
+    PRANA_CYCLE_INTERVAL_MS: "3000"
+  depends_on:
+    bootstrap:
+      condition: service_completed_successfully
+
+services:
+  bootstrap:
+    build: .
+    entrypoint: ["sh", "-c", "
+      provectl init --validators 5 --out /uids &&
+      echo 'Genesis complete'
+    "]
+    volumes:
+      - uids:/uids
+    networks: [prana-net]
+
+  validator-1: &val
+    <<: *validator
+    container_name: val-1
+    environment:
+      PRANA_NODE_ID: "validator-1"
+      PRANA_UID_FILE: "/uids/uid-1.cbor"
+      PRANA_PEERS: "val-2:50051,val-3:50051,val-4:50051,val-5:50051"
+    ports: ["50051:50051"]
+
+  validator-2:
+    <<: *validator
+    container_name: val-2
+    environment:
+      PRANA_NODE_ID: "validator-2"
+      PRANA_UID_FILE: "/uids/uid-2.cbor"
+      PRANA_PEERS: "val-1:50051,val-3:50051,val-4:50051,val-5:50051"
+    ports: ["50052:50051"]
+
+  validator-3:
+    <<: *validator
+    container_name: val-3
+    environment:
+      PRANA_NODE_ID: "validator-3"
+      PRANA_UID_FILE: "/uids/uid-3.cbor"
+      PRANA_PEERS: "val-1:50051,val-2:50051,val-4:50051,val-5:50051"
+    ports: ["50053:50051"]
+
+  validator-4:
+    <<: *validator
+    container_name: val-4
+    environment:
+      PRANA_NODE_ID: "validator-4"
+      PRANA_UID_FILE: "/uids/uid-4.cbor"
+      PRANA_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-5:50051"
+    ports: ["50054:50051"]
+
+  validator-5:
+    <<: *validator
+    container_name: val-5
+    environment:
+      PRANA_NODE_ID: "validator-5"
+      PRANA_UID_FILE: "/uids/uid-5.cbor"
+      PRANA_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-4:50051"
+    ports: ["50055:50051"]
+
+  prometheus:
+    image: prom/prometheus:v2.53
+    ports: ["9090:9090"]
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml
+    networks: [prana-net]
+    profiles: ["monitor"]
+
+  grafana:
+    image: grafana/grafana:11.0
+    ports: ["3000:3000"]
+    networks: [prana-net]
+    profiles: ["monitor"]
+
+volumes:
+  uids:
+  data:
+
+networks:
+  prana-net:
+    driver: bridge
