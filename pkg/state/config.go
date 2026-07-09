@@ -1,3 +1,4 @@
+// IPC diffusion configuration.
 package state
 
 type Config struct {

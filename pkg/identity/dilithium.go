@@ -1,3 +1,4 @@
+// IPC identity — Dilithium3 post-quantum signatures.
 package identity
 
 import (

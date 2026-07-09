@@ -1,3 +1,4 @@
+// IPC network state — Laplacian diffusion supervision.
 package state
 
 import "encoding/hex"

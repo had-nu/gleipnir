@@ -1,3 +1,5 @@
+# IPC (Immutable Provenance Chain) — Prana reference implementation
+# 5-validator topology with Prometheus+Grafana monitoring
 version: "3.9"
 
 x-validator: &validator
@@ -8,9 +10,9 @@ x-validator: &validator
     - uids:/uids
     - data:/data
   environment:
-    PRANA_LOG_LEVEL: &log-level info
-    PRANA_GRPC_PORT: "50051"
-    PRANA_CYCLE_INTERVAL_MS: "3000"
+    IPC_LOG_LEVEL: &log-level info
+    IPC_GRPC_PORT: "50051"
+    IPC_CYCLE_INTERVAL_MS: "3000"
   depends_on:
     bootstrap:
       condition: service_completed_successfully
@@ -30,45 +32,45 @@ services:
     <<: *validator
     container_name: val-1
     environment:
-      PRANA_NODE_ID: "validator-1"
-      PRANA_UID_FILE: "/uids/uid-1.cbor"
-      PRANA_PEERS: "val-2:50051,val-3:50051,val-4:50051,val-5:50051"
+      IPC_NODE_ID: "validator-1"
+      IPC_UID_FILE: "/uids/uid-1.cbor"
+      IPC_PEERS: "val-2:50051,val-3:50051,val-4:50051,val-5:50051"
     ports: ["50051:50051"]
 
   validator-2:
     <<: *validator
     container_name: val-2
     environment:
-      PRANA_NODE_ID: "validator-2"
-      PRANA_UID_FILE: "/uids/uid-2.cbor"
-      PRANA_PEERS: "val-1:50051,val-3:50051,val-4:50051,val-5:50051"
+      IPC_NODE_ID: "validator-2"
+      IPC_UID_FILE: "/uids/uid-2.cbor"
+      IPC_PEERS: "val-1:50051,val-3:50051,val-4:50051,val-5:50051"
     ports: ["50052:50051"]
 
   validator-3:
     <<: *validator
     container_name: val-3
     environment:
-      PRANA_NODE_ID: "validator-3"
-      PRANA_UID_FILE: "/uids/uid-3.cbor"
-      PRANA_PEERS: "val-1:50051,val-2:50051,val-4:50051,val-5:50051"
+      IPC_NODE_ID: "validator-3"
+      IPC_UID_FILE: "/uids/uid-3.cbor"
+      IPC_PEERS: "val-1:50051,val-2:50051,val-4:50051,val-5:50051"
     ports: ["50053:50051"]
 
   validator-4:
     <<: *validator
     container_name: val-4
     environment:
-      PRANA_NODE_ID: "validator-4"
-      PRANA_UID_FILE: "/uids/uid-4.cbor"
-      PRANA_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-5:50051"
+      IPC_NODE_ID: "validator-4"
+      IPC_UID_FILE: "/uids/uid-4.cbor"
+      IPC_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-5:50051"
     ports: ["50054:50051"]
 
   validator-5:
     <<: *validator
     container_name: val-5
     environment:
-      PRANA_NODE_ID: "validator-5"
-      PRANA_UID_FILE: "/uids/uid-5.cbor"
-      PRANA_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-4:50051"
+      IPC_NODE_ID: "validator-5"
+      IPC_UID_FILE: "/uids/uid-5.cbor"
+      IPC_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-4:50051"
     ports: ["50055:50051"]
 
   prometheus:

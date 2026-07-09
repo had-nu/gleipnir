@@ -1,6 +1,8 @@
-# Immutable Provenance Chain (IPC) v1 — Prana reference implementation
+# Immutable Provenance Chain (IPC) v1
 
-Anchoring layer for Wardex REC provenance. Simplified endocybernetic consensus:
+Protocol for anchoring provenance hashes using simplified endocybernetic consensus.
+**Prana** is the reference implementation.
+
 - VRF-based proposer selection (not round-robin)
 - Dilithium3 3/3 quorum signing
 - Sparse Merkle Tree for state root
@@ -40,3 +42,9 @@ See `pkg/server/api.proto` for the full schema.
 | GetHealth | Node health metrics |
 | GetBlock | Get block by index |
 | StreamBlocks | Stream blocks from range |
+
+## Implementations
+
+| Name | Language | Maintainer |
+|------|----------|------------|
+| Prana | Go | had-nu |

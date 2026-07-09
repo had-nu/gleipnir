@@ -1,8 +1,11 @@
+// IPC identity — uID0 soulbound token. Prana reference implementation.
 package identity
 
-import "encoding/hex"
+import (
+	"crypto/rand"
+	"encoding/hex"
+)
 
-// UIDZeroSoulbound is the foundational identity token.
 type UIDZeroSoulbound struct {
 	RootID              []byte   `cbor:"0,keyasint"`
 	FEntropy            []byte   `cbor:"1,keyasint"`
@@ -27,21 +30,21 @@ func NewUIDZero(randSeed string, simulated bool) *UIDZeroSoulbound {
 	seed := make([]byte, 32)
 	copy(seed, []byte(randSeed))
 
-	pk, sk, err := GenerateDilithiumKey(nil)
+	pk, sk, err := GenerateDilithiumKey(rand.Reader)
 	if err != nil {
 		pk = make([]byte, 32)
 		sk = make([]byte, 32)
 	}
 
 	uid := &UIDZeroSoulbound{
-		RootID:        seed[:16],
-		FEntropy:      seed[16:],
-		GenesisHash:   []byte(hex.EncodeToString(seed)),
-		CycleIndex:    0,
-		GeneratedAt:   generateTimestamp(),
-		Simulated:     simulated,
-		PublicKey:     pk,
-		SecretKey:     sk,
+		RootID:      seed[:16],
+		FEntropy:    seed[16:],
+		GenesisHash: []byte(hex.EncodeToString(seed)),
+		CycleIndex:  0,
+		GeneratedAt: generateTimestamp(),
+		Simulated:   simulated,
+		PublicKey:   pk,
+		SecretKey:   sk,
 	}
 	return uid
 }

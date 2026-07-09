@@ -1,3 +1,4 @@
+// IPC identity — CBOR serialization.
 package identity
 
 import (
@@ -6,7 +7,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
-// deterministicMode ensures consistent CBOR encoding (canonical).
 var deterministicMode cbor.EncMode
 
 func init() {
@@ -17,15 +17,12 @@ func init() {
 	}
 }
 
-// CalculateFinalDigest computes the BLAKE3 digest of all fields (0..13)
 func (u *UIDZeroSoulbound) CalculateFinalDigest() ([]byte, error) {
-	// Temporarily remove FinalDigest to exclude it from the hash
 	origDigest := u.FinalDigest
 	u.FinalDigest = nil
 
 	data, err := deterministicMode.Marshal(u)
 
-	// Restore it
 	u.FinalDigest = origDigest
 
 	if err != nil {
@@ -35,7 +32,6 @@ func (u *UIDZeroSoulbound) CalculateFinalDigest() ([]byte, error) {
 	return Hash(data), nil
 }
 
-// Seal computes and sets the FinalDigest of the token.
 func (u *UIDZeroSoulbound) Seal() error {
 	digest, err := u.CalculateFinalDigest()
 	if err != nil {
@@ -45,12 +41,10 @@ func (u *UIDZeroSoulbound) Seal() error {
 	return nil
 }
 
-// SerializeCBOR returns the deterministically encoded token byte slice.
 func (u *UIDZeroSoulbound) SerializeCBOR() ([]byte, error) {
 	return deterministicMode.Marshal(u)
 }
 
-// UnmarshalCBOR decodes the bytes into a token.
 func UnmarshalCBOR(data []byte) (*UIDZeroSoulbound, error) {
 	var uid0 UIDZeroSoulbound
 	if err := cbor.Unmarshal(data, &uid0); err != nil {

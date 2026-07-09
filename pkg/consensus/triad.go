@@ -1,3 +1,4 @@
+// IPC VRF pure proposer selection and triad formation.
 package consensus
 
 import (

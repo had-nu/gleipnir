@@ -1,3 +1,4 @@
+// IPC state root computation (Blake3).
 package state
 
 import (

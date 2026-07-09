@@ -1,3 +1,4 @@
+// IPC state transition (heartbeat diffusion).
 package state
 
 import (
@@ -6,8 +7,8 @@ import (
 )
 
 var (
-	ErrChainBroken       = errors.New("chain broken: previous hash does not match state root")
-	ErrNetworkFragmented = errors.New("network fragmented: lambda1 below threshold")
+	ErrChainBroken       = errors.New("IPC chain broken: previous hash does not match state root")
+	ErrNetworkFragmented = errors.New("IPC network fragmented: lambda1 below threshold")
 )
 
 func Apply(s NetworkState, prevRoot []byte, heartbeats []string, cfg Config) (NetworkState, error) {

@@ -1,3 +1,4 @@
+// IPC node and peer types.
 package consensus
 
 import "github.com/had-nu/prana-provenance-chain/pkg/identity"

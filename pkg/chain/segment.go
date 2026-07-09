@@ -1,3 +1,5 @@
+// Protocol types for the Immutable Provenance Chain (IPC) v1.
+// Package chain defines the IPC block, entry, and Anchorer interface.
 package chain
 
 import "context"

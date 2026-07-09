@@ -1,3 +1,4 @@
+// IPC cycle state.
 package consensus
 
 import "github.com/had-nu/prana-provenance-chain/pkg/chain"

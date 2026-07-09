@@ -1,3 +1,4 @@
+// IPC Laplacian graph — eigenvalue supervision.
 package state
 
 import (
@@ -6,8 +7,8 @@ import (
 
 func BuildLaplacian(graph ReputationGraph, nodes map[string]NodeState) *mat.SymDense {
 	n := len(nodes)
-	if n == 0 {
-		return mat.NewSymDense(0, nil)
+	if n < 2 {
+		return nil
 	}
 
 	uids := make([]string, 0, n)
@@ -44,6 +45,9 @@ func BuildLaplacian(graph ReputationGraph, nodes map[string]NodeState) *mat.SymD
 }
 
 func ComputeLambda1(l *mat.SymDense) float64 {
+	if l == nil {
+		return 0
+	}
 	n, _ := l.Dims()
 	if n < 2 {
 		return 0

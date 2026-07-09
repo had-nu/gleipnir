@@ -1,3 +1,4 @@
+# IPC pipeline simulator — 10 concurrent load generators
 version: "3.9"
 
 x-pipeline: &pipeline
@@ -5,67 +6,67 @@ x-pipeline: &pipeline
   entrypoint: ["pipeline-sim"]
   networks: [prana-net]
   environment:
-    PRANA_TARGETS: "val-1:50051,val-2:50051,val-3:50051"
-    PRANA_INTERVAL: "2s"
-    PRANA_PIPELINE_ID: "ci-${PIPELINE_ID:-0}"
+    IPC_TARGETS: "val-1:50051,val-2:50051,val-3:50051"
+    IPC_INTERVAL: "2s"
+    IPC_PIPELINE_ID: "ci-${PIPELINE_ID:-0}"
 
 services:
   pipeline-sim-1:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-1"
+      IPC_PIPELINE_ID: "ci-pipeline-1"
     profiles: ["sim"]
 
   pipeline-sim-2:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-2"
+      IPC_PIPELINE_ID: "ci-pipeline-2"
     profiles: ["sim"]
 
   pipeline-sim-3:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-3"
+      IPC_PIPELINE_ID: "ci-pipeline-3"
     profiles: ["sim"]
 
   pipeline-sim-4:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-4"
+      IPC_PIPELINE_ID: "ci-pipeline-4"
     profiles: ["sim"]
 
   pipeline-sim-5:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-5"
+      IPC_PIPELINE_ID: "ci-pipeline-5"
     profiles: ["sim"]
 
   pipeline-sim-6:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-6"
+      IPC_PIPELINE_ID: "ci-pipeline-6"
     profiles: ["sim"]
 
   pipeline-sim-7:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-7"
+      IPC_PIPELINE_ID: "ci-pipeline-7"
     profiles: ["sim"]
 
   pipeline-sim-8:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-8"
+      IPC_PIPELINE_ID: "ci-pipeline-8"
     profiles: ["sim"]
 
   pipeline-sim-9:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-9"
+      IPC_PIPELINE_ID: "ci-pipeline-9"
     profiles: ["sim"]
 
   pipeline-sim-10:
     <<: *pipeline
     environment:
-      PRANA_PIPELINE_ID: "ci-pipeline-10"
+      IPC_PIPELINE_ID: "ci-pipeline-10"
     profiles: ["sim"]
