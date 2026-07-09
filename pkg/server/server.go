@@ -1,14 +1,14 @@
-// IPC gRPC server. Prana reference implementation.
+// IPC gRPC server. Gleipnir reference implementation.
 package server
 
 import (
 	"context"
 	"time"
 
-	"github.com/had-nu/prana-provenance-chain/pkg/chain"
-	"github.com/had-nu/prana-provenance-chain/pkg/consensus"
-	"github.com/had-nu/prana-provenance-chain/pkg/identity"
-	pb "github.com/had-nu/prana-provenance-chain/pkg/server/pb"
+	"github.com/had-nu/gleipnir/pkg/chain"
+	"github.com/had-nu/gleipnir/pkg/consensus"
+	"github.com/had-nu/gleipnir/pkg/identity"
+	pb "github.com/had-nu/gleipnir/pkg/server/pb"
 )
 
 type Server struct {

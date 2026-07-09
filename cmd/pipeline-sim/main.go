@@ -12,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	pb "github.com/had-nu/prana-provenance-chain/pkg/server/pb"
+	pb "github.com/had-nu/gleipnir/pkg/server/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -93,7 +93,6 @@ func simulateOne(ctx context.Context, target, pipelineID string, seq uint64) {
 
 	conn, err := grpc.Dial(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		totalErrors.Add(1)

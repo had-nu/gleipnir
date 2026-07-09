@@ -1,7 +1,7 @@
 // IPC node and peer types.
 package consensus
 
-import "github.com/had-nu/prana-provenance-chain/pkg/identity"
+import "github.com/had-nu/gleipnir/pkg/identity"
 
 type Node struct {
 	UID   identity.UIDZeroSoulbound

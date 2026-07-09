@@ -1,7 +1,7 @@
 .PHONY: all build proto test lint clean docker-sim docker-down
 
-# IPC (Immutable Provenance Chain) — Prana reference implementation
-PROJECT := github.com/had-nu/prana-provenance-chain
+# IPC (Immutable Provenance Chain) — Gleipnir reference implementation
+PROJECT := github.com/had-nu/gleipnir
 BUILD_DIR := bin
 
 all: proto build

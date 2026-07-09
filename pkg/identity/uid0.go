@@ -1,4 +1,4 @@
-// IPC identity — uID0 soulbound token. Prana reference implementation.
+// IPC identity — uID0 soulbound token. Gleipnir reference implementation.
 package identity
 
 import (

@@ -4,7 +4,7 @@ package consensus
 import (
 	"errors"
 
-	"github.com/had-nu/prana-provenance-chain/pkg/identity"
+	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
 var ErrQuorumNotMet = errors.New("IPC quorum: 3/3 signatures required")

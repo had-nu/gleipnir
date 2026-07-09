@@ -1,0 +1,139 @@
+{
+  "generated": "2026-07-10T00:19:25.099084474+01:00",
+  "system": "Gleipnir Provenance Chain",
+  "results": [
+    {
+      "name": "BenchmarkSMTInsert/N=10-8",
+      "n": 115,
+      "ns_per_op": 10836740,
+      "bytes_per_op": 8231083,
+      "allocs_per_op": 11153
+    },
+    {
+      "name": "BenchmarkSMTInsert/N=100-8",
+      "n": 8,
+      "ns_per_op": 180822586,
+      "bytes_per_op": 80583216,
+      "allocs_per_op": 111787
+    },
+    {
+      "name": "BenchmarkSMTInsert/N=1000-8",
+      "n": 1,
+      "ns_per_op": 1606696420,
+      "bytes_per_op": 802891832,
+      "allocs_per_op": 1117825
+    },
+    {
+      "name": "BenchmarkSMTProve/N=10-8",
+      "n": 1134,
+      "ns_per_op": 909858,
+      "bytes_per_op": 862694,
+      "allocs_per_op": 447
+    },
+    {
+      "name": "BenchmarkSMTProve/N=100-8",
+      "n": 1647,
+      "ns_per_op": 784885,
+      "bytes_per_op": 861840,
+      "allocs_per_op": 446
+    },
+    {
+      "name": "BenchmarkSMTProve/N=1000-8",
+      "n": 1909,
+      "ns_per_op": 787231,
+      "bytes_per_op": 861740,
+      "allocs_per_op": 446
+    },
+    {
+      "name": "BenchmarkSMTVerify-8",
+      "n": 1449,
+      "ns_per_op": 867935,
+      "bytes_per_op": 741201,
+      "allocs_per_op": 898
+    },
+    {
+      "name": "BenchmarkSMTBulkInsert/N=10-8",
+      "n": 122,
+      "ns_per_op": 10465233,
+      "bytes_per_op": 8235497,
+      "allocs_per_op": 11167
+    },
+    {
+      "name": "BenchmarkSMTBulkInsert/N=100-8",
+      "n": 8,
+      "ns_per_op": 142047412,
+      "bytes_per_op": 80629476,
+      "allocs_per_op": 111928
+    },
+    {
+      "name": "BenchmarkSMTBulkInsert/N=1000-8",
+      "n": 1,
+      "ns_per_op": 1279653525,
+      "bytes_per_op": 803917544,
+      "allocs_per_op": 1119243
+    },
+    {
+      "name": "BenchmarkDilithium3Keygen-8",
+      "n": 2728,
+      "ns_per_op": 489999,
+      "bytes_per_op": 88096,
+      "allocs_per_op": 5
+    },
+    {
+      "name": "BenchmarkDilithium3Sign-8",
+      "n": 2318,
+      "ns_per_op": 623473,
+      "bytes_per_op": 77632,
+      "allocs_per_op": 3
+    },
+    {
+      "name": "BenchmarkDilithium3Verify-8",
+      "n": 3068,
+      "ns_per_op": 391584,
+      "bytes_per_op": 33248,
+      "allocs_per_op": 3
+    },
+    {
+      "name": "BenchmarkBlake3Hash-8",
+      "n": 90301,
+      "ns_per_op": 12211,
+      "bytes_per_op": 3232,
+      "allocs_per_op": 2
+    },
+    {
+      "name": "BenchmarkSignAndVerifyCombined-8",
+      "n": 1216,
+      "ns_per_op": 1008805,
+      "bytes_per_op": 110880,
+      "allocs_per_op": 6
+    },
+    {
+      "name": "BenchmarkSelectProposer/peers=3-8",
+      "n": 242290,
+      "ns_per_op": 4178,
+      "bytes_per_op": 288,
+      "allocs_per_op": 6
+    },
+    {
+      "name": "BenchmarkSelectProposer/peers=10-8",
+      "n": 95900,
+      "ns_per_op": 13143,
+      "bytes_per_op": 960,
+      "allocs_per_op": 20
+    },
+    {
+      "name": "BenchmarkSelectProposer/peers=50-8",
+      "n": 18996,
+      "ns_per_op": 64122,
+      "bytes_per_op": 4800,
+      "allocs_per_op": 100
+    },
+    {
+      "name": "BenchmarkVerifyQuorum-8",
+      "n": 1148,
+      "ns_per_op": 1099536,
+      "bytes_per_op": 99744,
+      "allocs_per_op": 9
+    }
+  ]
+}

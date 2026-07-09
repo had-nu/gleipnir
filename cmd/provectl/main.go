@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	pb "github.com/had-nu/prana-provenance-chain/pkg/server/pb"
+	pb "github.com/had-nu/gleipnir/pkg/server/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -19,7 +19,7 @@ var addr string
 
 var rootCmd = &cobra.Command{
 	Use:   "provectl",
-	Short: "IPC (Immutable Provenance Chain) admin CLI — Prana reference implementation",
+	Short: "IPC (Immutable Provenance Chain) admin CLI — Gleipnir reference implementation",
 }
 
 var initCmd = &cobra.Command{

@@ -1,8 +1,8 @@
 // Immutable Provenance Chain (IPC) protocol — gRPC API.
-// Prana is the reference implementation.
+// Gleipnir is the reference implementation.
 syntax = "proto3";
 package provenance;
-option go_package = "github.com/had-nu/prana-provenance-chain/pkg/server/pb";
+option go_package = "github.com/had-nu/gleipnir/pkg/server/pb";
 
 service ProvenanceAnchor {
   rpc SubmitHash(SubmitRequest) returns (SubmitResponse);

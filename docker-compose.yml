@@ -1,4 +1,4 @@
-# IPC (Immutable Provenance Chain) — Prana reference implementation
+# IPC (Immutable Provenance Chain) — Gleipnir reference implementation
 # 5-validator topology with Prometheus+Grafana monitoring
 version: "3.9"
 

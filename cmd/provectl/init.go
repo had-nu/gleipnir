@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/had-nu/prana-provenance-chain/pkg/identity"
+	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
 func cmdInit(validators int, outDir string) error {
@@ -18,7 +18,7 @@ func cmdInit(validators int, outDir string) error {
 	manifest := make(map[string]string)
 
 	for i := 1; i <= validators; i++ {
-		seed := fmt.Sprintf("prana-validator-%d-%s", i, hex.EncodeToString([]byte(fmt.Sprintf("genesis-%d", i))))
+		seed := fmt.Sprintf("gleipnir-validator-%d-%s", i, hex.EncodeToString([]byte(fmt.Sprintf("genesis-%d", i))))
 		uid := identity.NewUIDZero(seed, true)
 
 		em, err := cbor.Marshal(uid)

@@ -10,9 +10,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/had-nu/prana-provenance-chain/pkg/identity"
-	"github.com/had-nu/prana-provenance-chain/pkg/server"
-	pb "github.com/had-nu/prana-provenance-chain/pkg/server/pb"
+	"github.com/had-nu/gleipnir/pkg/identity"
+	"github.com/had-nu/gleipnir/pkg/server"
+	pb "github.com/had-nu/gleipnir/pkg/server/pb"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"

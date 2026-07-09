@@ -1,4 +1,4 @@
-# Immutable Provenance Chain (IPC) v1 — Prana reference implementation
+# Immutable Provenance Chain (IPC) v1 — Gleipnir reference implementation
 
 Simplified endocybernetic consensus for provenance anchoring:
 - VRF-based proposer selection (not round-robin)

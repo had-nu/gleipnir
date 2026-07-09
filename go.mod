@@ -1,4 +1,4 @@
-module github.com/had-nu/prana-provenance-chain
+module github.com/had-nu/gleipnir
 
 go 1.24.0
 

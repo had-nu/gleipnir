@@ -8,15 +8,8 @@ import (
 )
 
 var ErrNotFound = errors.New("smt: key not found")
-var ErrInvalidProof = errors.New("smt: invalid proof")
 
 const hashLen = 32
-
-type SparseMerkleTree struct {
-	root     [hashLen]byte
-	leafBits int
-	store    map[[hashLen]byte]*node
-}
 
 type node struct {
 	left  [hashLen]byte
@@ -27,11 +20,27 @@ type node struct {
 	value []byte
 }
 
-func New(leafBits int) *SparseMerkleTree {
-	return &SparseMerkleTree{
-		leafBits: leafBits,
-		store:    make(map[[hashLen]byte]*node),
+type SparseMerkleTree struct {
+	root   [hashLen]byte
+	depth  int
+	store  map[[hashLen]byte]*node
+	zeroes [][hashLen]byte
+}
+
+func New(depth int) *SparseMerkleTree {
+	t := &SparseMerkleTree{
+		depth:  depth,
+		store:  make(map[[hashLen]byte]*node),
+		zeroes: make([][hashLen]byte, depth+1),
 	}
+	for i := 0; i < depth; i++ {
+		if i == 0 {
+			t.zeroes[i] = [hashLen]byte{}
+		} else {
+			t.zeroes[i] = parentHash(t.zeroes[i-1], t.zeroes[i-1])
+		}
+	}
+	return t
 }
 
 func parentHash(left, right [hashLen]byte) [hashLen]byte {
@@ -43,152 +52,117 @@ func parentHash(left, right [hashLen]byte) [hashLen]byte {
 	return sum
 }
 
-func (smt *SparseMerkleTree) Insert(key []byte, value []byte) error {
-	h := blake3.Sum256(value)
+func leafHash(key, value []byte) [hashLen]byte {
+	h := blake3.New(32, nil)
+	h.Write([]byte("leaf"))
+	h.Write(key)
+	h.Write(value)
+	var sum [hashLen]byte
+	copy(sum[:], h.Sum(nil))
+	return sum
+}
 
-	if len(smt.store) == 0 {
-		n := &node{
-			leaf:  true,
-			key:   key,
-			value: value,
-			hash:  h,
-		}
-		smt.store[n.hash] = n
-		smt.root = n.hash
-		return nil
+func path(key []byte, depth int) uint {
+	if depth < 0 {
+		return 0
 	}
-
-	n := smt.store[smt.root]
-	if n == nil {
-		n = &node{hash: smt.root}
-		smt.store[n.hash] = n
+	byteIdx := depth / 8
+	if byteIdx >= len(key) {
+		return 0
 	}
+	return uint((key[byteIdx] >> (depth % 8)) & 1)
+}
 
-	newRoot := smt.insert(smt.root, key, value, h, smt.leafBits-1)
-	smt.root = newRoot
+func (t *SparseMerkleTree) Insert(key []byte, value []byte) error {
+	t.root = t.insertAt(t.root, key, value, t.depth-1)
 	return nil
 }
 
-func (smt *SparseMerkleTree) insert(current [hashLen]byte, key []byte, value []byte, leafHash [hashLen]byte, depth int) [hashLen]byte {
-	n, exists := smt.store[current]
+func (t *SparseMerkleTree) insertAt(current [hashLen]byte, key []byte, value []byte, depth int) [hashLen]byte {
+	n, exists := t.store[current]
+
 	if !exists {
-		h := parentHash(current, leafHash)
-		nn := &node{left: current, right: leafHash, hash: h}
-		smt.store[h] = nn
-		return h
+		lh := leafHash(key, value)
+		t.store[lh] = &node{leaf: true, key: key, value: value, hash: lh}
+		return lh
 	}
 
 	if n.leaf {
 		if bytes.Equal(n.key, key) {
-			n.value = value
-			n.hash = leafHash
+			lh := leafHash(key, value)
+			t.store[lh] = &node{leaf: true, key: key, value: value, hash: lh}
+			return lh
+		}
+
+		if depth < 0 {
 			return n.hash
 		}
 
-		side := (bitAt(n.key, depth) << 1) | bitAt(key, depth)
-		var left, right [hashLen]byte
-		switch side {
-		case 0:
-			left = n.hash
-			right = leafHash
-		case 1:
-			left = n.hash
-			right = leafHash
-		case 2:
-			left = leafHash
-			right = n.hash
-		case 3:
-			left = leafHash
-			right = n.hash
-		}
-		h := parentHash(left, right)
-		smt.store[h] = &node{left: left, right: right, hash: h}
+		existingLH := leafHash(n.key, n.value)
+		newLH := leafHash(key, value)
+		t.store[newLH] = &node{leaf: true, key: key, value: value, hash: newLH}
+		return t.splitAndInsert(n.key, existingLH, key, newLH, depth)
+	}
+
+	b := path(key, depth)
+	if b == 0 {
+		newLeft := t.insertAt(n.left, key, value, depth-1)
+		newRight := n.right
+		h := parentHash(newLeft, newRight)
+		t.store[h] = &node{left: newLeft, right: newRight, hash: h}
+		return h
+	} else {
+		newLeft := n.left
+		newRight := t.insertAt(n.right, key, value, depth-1)
+		h := parentHash(newLeft, newRight)
+		t.store[h] = &node{left: newLeft, right: newRight, hash: h}
 		return h
 	}
+}
 
-	side := bitAt(key, depth)
-	var left, right [hashLen]byte
+func (t *SparseMerkleTree) splitAndInsert(key1 []byte, h1 [hashLen]byte, key2 []byte, h2 [hashLen]byte, depth int) [hashLen]byte {
+	if depth < 0 {
+		return h2
+	}
 
-	if side == 0 {
-		left = smt.insert(n.left, key, value, leafHash, depth-1)
-		right = n.right
+	b1 := path(key1, depth)
+	b2 := path(key2, depth)
+
+	if b1 == b2 {
+		child := t.splitAndInsert(key1, h1, key2, h2, depth-1)
+		zero := t.zeroes[depth]
+		if b1 == 0 {
+			h := parentHash(child, zero)
+			t.store[h] = &node{left: child, right: zero, hash: h}
+			return h
+		} else {
+			h := parentHash(zero, child)
+			t.store[h] = &node{left: zero, right: child, hash: h}
+			return h
+		}
+	}
+
+	if b1 == 0 {
+		h := parentHash(h1, h2)
+		t.store[h] = &node{left: h1, right: h2, hash: h}
+		return h
 	} else {
-		left = n.left
-		right = smt.insert(n.right, key, value, leafHash, depth-1)
+		h := parentHash(h2, h1)
+		t.store[h] = &node{left: h2, right: h1, hash: h}
+		return h
 	}
-
-	h := parentHash(left, right)
-	smt.store[h] = &node{left: left, right: right, hash: h}
-	return h
 }
 
-func (smt *SparseMerkleTree) Root() [hashLen]byte {
-	return smt.root
+func (t *SparseMerkleTree) Root() [hashLen]byte {
+	return t.root
 }
 
-func (smt *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
-	var proof [][hashLen]byte
-
-	current := smt.root
-	depth := smt.leafBits - 1
+func (t *SparseMerkleTree) Get(key []byte) ([]byte, error) {
+	current := t.root
+	depth := t.depth - 1
 
 	for depth >= 0 {
-		n, exists := smt.store[current]
-		if !exists {
-			return nil, ErrNotFound
-		}
-
-		if n.leaf {
-			if bytes.Equal(n.key, key) {
-				return proof, nil
-			}
-			return nil, ErrNotFound
-		}
-
-		side := bitAt(key, depth)
-		if side == 0 {
-			proof = append(proof, n.right)
-			current = n.left
-		} else {
-			proof = append(proof, n.left)
-			current = n.right
-		}
-		depth--
-	}
-
-	return nil, ErrNotFound
-}
-
-func (smt *SparseMerkleTree) Verify(key []byte, value []byte, root [hashLen]byte, proof [][hashLen]byte) bool {
-	leafHash := blake3.Sum256(value)
-	current := leafHash
-
-	for i := 0; i < len(proof); i++ {
-		side := bitAt(key, smt.leafBits-1-i)
-		if side == 0 {
-			current = parentHash(current, proof[i])
-		} else {
-			current = parentHash(proof[i], current)
-		}
-	}
-
-	return current == root
-}
-
-func bitAt(data []byte, bit int) int {
-	byteIdx := bit / 8
-	if byteIdx >= len(data) {
-		return 0
-	}
-	return int((data[byteIdx] >> (bit % 8)) & 1)
-}
-
-func (smt *SparseMerkleTree) Get(key []byte) ([]byte, error) {
-	current := smt.root
-	depth := smt.leafBits - 1
-
-	for depth >= 0 {
-		n, exists := smt.store[current]
+		n, exists := t.store[current]
 		if !exists {
 			return nil, ErrNotFound
 		}
@@ -198,8 +172,8 @@ func (smt *SparseMerkleTree) Get(key []byte) ([]byte, error) {
 			}
 			return nil, ErrNotFound
 		}
-		side := bitAt(key, depth)
-		if side == 0 {
+		b := path(key, depth)
+		if b == 0 {
 			current = n.left
 		} else {
 			current = n.right
@@ -210,9 +184,55 @@ func (smt *SparseMerkleTree) Get(key []byte) ([]byte, error) {
 	return nil, ErrNotFound
 }
 
-func (smt *SparseMerkleTree) BulkInsert(entries map[string][]byte) error {
+func (t *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
+	var proof [][hashLen]byte
+	current := t.root
+	depth := t.depth - 1
+
+	for depth >= 0 {
+		n, exists := t.store[current]
+		if !exists {
+			return nil, ErrNotFound
+		}
+		if n.leaf {
+			return proof, nil
+		}
+
+		b := path(key, depth)
+		if b == 0 {
+			proof = append([][hashLen]byte{n.right}, proof...)
+			current = n.left
+		} else {
+			proof = append([][hashLen]byte{n.left}, proof...)
+			current = n.right
+		}
+		depth--
+	}
+
+	return nil, ErrNotFound
+}
+
+func (t *SparseMerkleTree) Verify(key []byte, value []byte, root [hashLen]byte, proof [][hashLen]byte) bool {
+	lh := leafHash(key, value)
+	current := lh
+
+	baseDepth := t.depth - 1 - len(proof)
+	for i := 0; i < len(proof); i++ {
+		depth := baseDepth + i + 1
+		b := path(key, depth)
+		if b == 0 {
+			current = parentHash(current, proof[i])
+		} else {
+			current = parentHash(proof[i], current)
+		}
+	}
+
+	return current == root
+}
+
+func (t *SparseMerkleTree) BulkInsert(entries map[string][]byte) error {
 	for key, value := range entries {
-		if err := smt.Insert([]byte(key), value); err != nil {
+		if err := t.Insert([]byte(key), value); err != nil {
 			return err
 		}
 	}

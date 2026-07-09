@@ -1,7 +1,7 @@
 // IPC cycle state.
 package consensus
 
-import "github.com/had-nu/prana-provenance-chain/pkg/chain"
+import "github.com/had-nu/gleipnir/pkg/chain"
 
 type CycleState struct {
 	Cycle   uint64

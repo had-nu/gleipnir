@@ -1,7 +1,7 @@
 # Immutable Provenance Chain (IPC) v1
 
 Protocol for anchoring provenance hashes using simplified endocybernetic consensus.
-**Prana** is the reference implementation.
+**Gleipnir** is the reference implementation.
 
 - VRF-based proposer selection (not round-robin)
 - Dilithium3 3/3 quorum signing
@@ -47,4 +47,4 @@ See `pkg/server/api.proto` for the full schema.
 
 | Name | Language | Maintainer |
 |------|----------|------------|
-| Prana | Go | had-nu |
+| Gleipnir | Go | had-nu |

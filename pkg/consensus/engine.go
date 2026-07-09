@@ -1,4 +1,4 @@
-// IPC consensus engine. Prana is the reference implementation.
+// IPC consensus engine. Gleipnir is the reference implementation.
 package consensus
 
 import (
@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/had-nu/prana-provenance-chain/pkg/chain"
-	"github.com/had-nu/prana-provenance-chain/pkg/identity"
-	"github.com/had-nu/prana-provenance-chain/pkg/smt"
-	"github.com/had-nu/prana-provenance-chain/pkg/state"
+	"github.com/had-nu/gleipnir/pkg/chain"
+	"github.com/had-nu/gleipnir/pkg/identity"
+	"github.com/had-nu/gleipnir/pkg/smt"
+	"github.com/had-nu/gleipnir/pkg/state"
 )
 
 type Engine struct {
