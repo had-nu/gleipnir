@@ -4,15 +4,13 @@ version: "3.9"
 
 x-validator: &validator
   build: .
-  entrypoint: ["provenanced"]
-  networks: [prana-net]
+  networks: [ipc-net]
   volumes:
     - uids:/uids
     - data:/data
   environment:
-    IPC_LOG_LEVEL: &log-level info
     IPC_GRPC_PORT: "50051"
-    IPC_CYCLE_INTERVAL_MS: "3000"
+    IPC_METRICS_PORT: "9090"
   depends_on:
     bootstrap:
       condition: service_completed_successfully
@@ -20,13 +18,10 @@ x-validator: &validator
 services:
   bootstrap:
     build: .
-    entrypoint: ["sh", "-c", "
-      provectl init --validators 5 --out /uids &&
-      echo 'Genesis complete'
-    "]
+    entrypoint: ["provectl", "init", "--validators", "5", "--out", "/uids"]
     volumes:
       - uids:/uids
-    networks: [prana-net]
+    networks: [ipc-net]
 
   validator-1: &val
     <<: *validator
@@ -78,13 +73,13 @@ services:
     ports: ["9090:9090"]
     volumes:
       - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml
-    networks: [prana-net]
+    networks: [ipc-net]
     profiles: ["monitor"]
 
   grafana:
     image: grafana/grafana:11.0
     ports: ["3000:3000"]
-    networks: [prana-net]
+    networks: [ipc-net]
     profiles: ["monitor"]
 
 volumes:
@@ -92,5 +87,5 @@ volumes:
   data:
 
 networks:
-  prana-net:
+  ipc-net:
     driver: bridge

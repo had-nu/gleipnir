@@ -18,20 +18,30 @@ import (
 	"google.golang.org/grpc/reflection"
 )
 
+func envFlag(name, env, def string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	if def != "" {
+		return def
+	}
+	return ""
+}
+
 func main() {
-	var (
-		grpcPort    = flag.String("grpc-port", "50051", "gRPC server port")
-		metricsPort = flag.String("metrics-port", "9090", "Prometheus metrics port")
-		uidFile     = flag.String("uid-file", "", "Path to uID0 CBOR file")
-		nodeID      = flag.String("node-id", "", "Unique node identifier")
-	)
+	grpcPort := flag.String("grpc-port", envFlag("", "IPC_GRPC_PORT", "50051"), "gRPC server port")
+	metricsPort := flag.String("metrics-port", envFlag("", "IPC_METRICS_PORT", "9090"), "Prometheus metrics port")
+	uidFile := flag.String("uid-file", envFlag("", "IPC_UID_FILE", ""), "Path to uID0 CBOR file")
+	nodeID := flag.String("node-id", envFlag("", "IPC_NODE_ID", ""), "Unique node identifier")
+	peers := flag.String("peers", envFlag("", "IPC_PEERS", ""), "Comma-separated peer addresses")
+	_ = peers
 	flag.Parse()
 
 	if *uidFile == "" {
-		log.Fatalf("--uid-file is required")
+		log.Fatalf("--uid-file (or IPC_UID_FILE) is required")
 	}
 	if *nodeID == "" {
-		log.Fatalf("--node-id is required")
+		log.Fatalf("--node-id (or IPC_NODE_ID) is required")
 	}
 
 	data, err := os.ReadFile(*uidFile)

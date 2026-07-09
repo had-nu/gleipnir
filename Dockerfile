@@ -1,13 +1,12 @@
 FROM golang:1.24-alpine AS builder
 
-RUN apk add --no-cache protoc protobuf-dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /provenanced ./cmd/provenanced
-RUN CGO_ENABLED=0 go build -o /provectl ./cmd/provectl
-RUN CGO_ENABLED=0 go build -o /pipeline-sim ./cmd/pipeline-sim
+RUN CGO_ENABLED=0 go build -o /provenanced ./cmd/provenanced && \
+    CGO_ENABLED=0 go build -o /provectl ./cmd/provectl && \
+    CGO_ENABLED=0 go build -o /pipeline-sim ./cmd/pipeline-sim
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates

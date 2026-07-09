@@ -30,14 +30,17 @@ clean:
 	rm -f pkg/server/api.pb.go
 	rm -f pkg/server/api_grpc.pb.go
 
-docker-sim:
-	docker compose -f docker-compose.yml -f docker-compose.sim.yml up -d --build
+docker-up:
+	docker compose up -d --build
 
 docker-down:
-	docker compose -f docker-compose.yml -f docker-compose.sim.yml down
+	docker compose down
+
+docker-sim:
+	docker compose -f docker-compose.yml -f docker-compose.sim.yml --profile sim up -d --build
 
 docker-logs:
-	docker compose -f docker-compose.yml -f docker-compose.sim.yml logs -f
+	docker compose logs -f
 
 docker-ps:
-	docker compose -f docker-compose.yml -f docker-compose.sim.yml ps
+	docker compose ps

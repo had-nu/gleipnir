@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"os"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -24,13 +25,21 @@ var (
 	maxLatency   atomic.Int64
 )
 
+func envFlag(name, env, def string) string {
+	if v := os.Getenv(env); v != "" {
+		return v
+	}
+	if def != "" {
+		return def
+	}
+	return ""
+}
+
 func main() {
-	var (
-		targets    = flag.String("targets", "localhost:50051", "Comma-separated list of validator addresses")
-		interval   = flag.Duration("interval", 2*time.Second, "Interval between submissions")
-		pipelineID = flag.String("pipeline-id", "ci-pipeline-0", "Pipeline identifier")
-		duration   = flag.Duration("duration", 0, "Run duration (0 = infinite)")
-	)
+	targets := flag.String("targets", envFlag("", "IPC_TARGETS", "localhost:50051"), "Comma-separated validator addresses")
+	interval := flag.Duration("interval", envFlagDuration("IPC_INTERVAL", 2*time.Second), "Interval between submissions")
+	pipelineID := flag.String("pipeline-id", envFlag("", "IPC_PIPELINE_ID", "ci-pipeline-0"), "Pipeline identifier")
+	duration := flag.Duration("duration", envFlagDuration("IPC_DURATION", 0), "Run duration (0 = infinite)")
 	flag.Parse()
 
 	addrs := strings.Split(*targets, ",")
@@ -67,6 +76,16 @@ func main() {
 	}
 
 	printStats(*pipelineID, ops, time.Since(start))
+}
+
+func envFlagDuration(env string, def time.Duration) time.Duration {
+	if v := os.Getenv(env); v != "" {
+		d, err := time.ParseDuration(v)
+		if err == nil {
+			return d
+		}
+	}
+	return def
 }
 
 func simulateOne(ctx context.Context, target, pipelineID string, seq uint64) {

@@ -4,7 +4,7 @@ version: "3.9"
 x-pipeline: &pipeline
   build: .
   entrypoint: ["pipeline-sim"]
-  networks: [prana-net]
+  networks: [ipc-net]
   environment:
     IPC_TARGETS: "val-1:50051,val-2:50051,val-3:50051"
     IPC_INTERVAL: "2s"
