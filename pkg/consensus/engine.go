@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -56,13 +57,13 @@ func (e *Engine) Stop() {
 	e.cancel()
 }
 
-func (e *Engine) Submit(entry chain.ProvenanceEntry) {
+func (e *Engine) Enqueue(entry chain.ProvenanceEntry) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.pending = append(e.pending, entry)
 }
 
-func (e *Engine) VerifyHash(hash [32]byte) (*chain.AnchorProof, bool) {
+func (e *Engine) LookupHash(hash [32]byte) (*chain.AnchorProof, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	proof, ok := e.anchored[hash]
@@ -121,12 +122,12 @@ func (e *Engine) cycleLoop() {
 		case <-e.ctx.Done():
 			return
 		case <-ticker.C:
-			e.runCycle()
+			e.RunCycle()
 		}
 	}
 }
 
-func (e *Engine) runCycle() {
+func (e *Engine) RunCycle() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -220,6 +221,53 @@ func (e *Engine) WaitForAnchor(ctx context.Context, hash [32]byte) (*chain.Ancho
 			}
 		}
 	}
+}
+
+// Anchorer interface implementation.
+
+func (e *Engine) Submit(ctx context.Context, hash [32]byte, submitter []byte, label string) (*chain.Ticket, error) {
+	e.mu.Lock()
+	e.pending = append(e.pending, chain.ProvenanceEntry{
+		Hash:      hash,
+		Submitter: submitter,
+		Timestamp: time.Now().UnixNano(),
+		Label:     label,
+	})
+	estimatedBlock := uint64(len(e.blocks))
+	e.mu.Unlock()
+	return &chain.Ticket{
+		Hash:       hash,
+		Status:     "pending",
+		BlockIndex: estimatedBlock,
+	}, nil
+}
+
+func (e *Engine) VerifyHash(ctx context.Context, hash [32]byte) (*chain.AnchorProof, error) {
+	proof, found := e.verifyHash(hash)
+	if !found {
+		return nil, fmt.Errorf("hash not found")
+	}
+	return proof, nil
+}
+
+func (e *Engine) GetNetworkHealth(ctx context.Context) (*chain.NetworkHealth, error) {
+	h := e.GetHealth()
+	return &h, nil
+}
+
+func (e *Engine) Close() error {
+	e.Stop()
+	return nil
+}
+
+func (e *Engine) verifyHash(hash [32]byte) (*chain.AnchorProof, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	proof, ok := e.anchored[hash]
+	if ok {
+		return proof, true
+	}
+	return nil, false
 }
 
 func computeBlockHash(b chain.Block) []byte {

@@ -6,7 +6,7 @@
 //	c, err := client.New("localhost:50051")
 //	defer c.Close()
 //
-//	ticket, err := c.Submit(ctx, hash[:], "my-label")
+//	ticket, err := c.Submit(ctx, hash, submitter, "my-label")
 //	proof, err := c.WaitForAnchor(ctx, hash[:])
 package client
 

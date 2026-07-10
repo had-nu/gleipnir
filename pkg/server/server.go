@@ -49,7 +49,7 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 		Timestamp: req.Timestamp,
 		Label:     req.Label,
 	}
-	s.engine.Submit(entry)
+	s.engine.Enqueue(entry)
 
 	return &pb.SubmitResponse{
 		Accepted: true,
@@ -81,7 +81,7 @@ func (s *Server) VerifyHash(ctx context.Context, req *pb.VerifyRequest) (*pb.Anc
 	var h [32]byte
 	copy(h[:], req.Hash)
 
-	proof, ok := s.engine.VerifyHash(h)
+	proof, ok := s.engine.LookupHash(h)
 	if !ok {
 		return &pb.AnchorProof{Found: false}, nil
 	}
