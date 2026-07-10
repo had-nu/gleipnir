@@ -30,6 +30,7 @@ type Engine struct {
 	cycleInterval time.Duration
 	ctx           context.Context
 	cancel        context.CancelFunc
+	nowFunc       func() time.Time // injectable clock, defaults to time.Now
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -46,6 +47,7 @@ func NewEngine(node Node, cycleInterval time.Duration) *Engine {
 		cycleInterval: cycleInterval,
 		ctx:           ctx,
 		cancel:        cancel,
+		nowFunc:       time.Now,
 	}
 	eng.state.Nodes[uidHex] = state.NodeState{
 		UID:    node.UID.RootID,
@@ -180,7 +182,7 @@ func (e *Engine) RunCycle() {
 		Proposer:  proposer.UID.RootID,
 		Anchored:  entries,
 		Lambda1:   e.state.Lambda1,
-		Timestamp: time.Now().UnixNano(),
+		Timestamp: e.nowFunc().UnixNano(),
 	}
 
 	for i := range entries {

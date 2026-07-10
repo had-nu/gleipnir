@@ -2,7 +2,10 @@ package state
 
 import (
 	"bytes"
+	"math/rand"
 	"testing"
+
+	"github.com/fxamacker/cbor/v2"
 )
 
 func TestStateSerialization(t *testing.T) {
@@ -139,5 +142,86 @@ func TestApplyNetworkFragmented(t *testing.T) {
 	_, err := Apply(s0, s0.SupervisionRoot, []string{"a1", "b1", "x1"}, DefaultConfig)
 	if err != ErrNetworkFragmented {
 		t.Fatalf("expected ErrNetworkFragmented for disconnected graph, got %v", err)
+	}
+}
+
+// GLP-T-A04 — CBOR canonical encoding stability.
+// Confirm that NetworkState CBOR-encodes identically regardless of
+// map insertion order.
+func TestCBORCanonicalEncoding(t *testing.T) {
+	em, _ := cbor.CanonicalEncOptions().EncMode()
+
+	// Build two states with same data but different insertion order
+	s1 := NetworkState{
+		Cycle: 10,
+		Nodes: map[string]NodeState{
+			"zulu": {UID: []byte{0x99}, Status: 0.5},
+			"alfa": {UID: []byte{0x01}, Status: 1.0},
+		},
+		Graph: ReputationGraph{
+			Edges: []Edge{
+				{From: "alfa", To: "zulu", Weight: 0.8},
+			},
+		},
+	}
+
+	s2 := NetworkState{
+		Cycle: 10,
+		Nodes: map[string]NodeState{
+			"alfa": {UID: []byte{0x01}, Status: 1.0},
+			"zulu": {UID: []byte{0x99}, Status: 0.5},
+		},
+		Graph: ReputationGraph{
+			Edges: []Edge{
+				{From: "alfa", To: "zulu", Weight: 0.8},
+			},
+		},
+	}
+
+	d1, err := em.Marshal(s1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d2, err := em.Marshal(s2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(d1, d2) {
+		t.Fatal("CBOR encoding differs despite identical data (map insertion order leak)")
+	}
+
+	// Round-trip: unmarshal and re-marshal
+	var s3 NetworkState
+	if err := cbor.Unmarshal(d1, &s3); err != nil {
+		t.Fatal(err)
+	}
+	d3, _ := em.Marshal(s3)
+	if !bytes.Equal(d1, d3) {
+		t.Fatal("CBOR round-trip produced different encoding")
+	}
+
+	// Shuffle nodes map keys and verify stability
+	keys := make([]string, 0, len(s1.Nodes))
+	for k := range s1.Nodes {
+		keys = append(keys, k)
+	}
+	for i := 0; i < 10; i++ {
+		// Reorder
+		for j := range keys {
+			k2 := rand.Intn(len(keys))
+			keys[j], keys[k2] = keys[k2], keys[j]
+		}
+		shuffled := NetworkState{
+			Cycle: s1.Cycle,
+			Nodes: make(map[string]NodeState),
+			Graph: s1.Graph,
+		}
+		for _, k := range keys {
+			shuffled.Nodes[k] = s1.Nodes[k]
+		}
+		d, _ := em.Marshal(shuffled)
+		if !bytes.Equal(d1, d) {
+			t.Fatal("CBOR encoding changed after reordering map keys")
+		}
 	}
 }
