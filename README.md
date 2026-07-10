@@ -23,11 +23,16 @@ Provenance data (hash anchors, document fingerprints, CI/CD attestations) is sca
 
 A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a hash-selected triad of validators.
 
+**Sub-chains** extend the model: every service (Wardex, anti-ransomware, etc.) gets its own SMT-anchored provenance chain, periodically checkpointed into the parent chain via cross-chain proofs.
+
 ## What it delivers
 
 - **Immutable hash chain** — every anchored hash is permanently recorded in a linear, signed chain of blocks
 - **Post-quantum signatures** — Dilithium3 3/3 quorum, no single point of compromise
+- **Post-quantum KEM** — Kyber1024 key encapsulation for encrypted peer channels
 - **Hash-based leader election** — deterministic proposer selection via `min(sha256(peerUID || cycle || stateRoot))`
+- **Multi-node consensus** — gossip-based block proposal + SMT root verification + co-signing across N peers
+- **Sub-chains** — per-service SMT + periodic anchoring + dual-Merkle cross-chain proofs
 - **Instant finality** — one cycle = one block = final; no forks, no rollbacks
 - **Sparse Merkle Tree state** — compact, verifiable state root via Blake3-based SMT (depth 256)
 - **Self-supervising network** — Laplacian diffusion monitors topology health from heartbeat latencies
@@ -36,10 +41,10 @@ A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an i
 ## How it works
 
 1. A **hash round** selects a proposer from the active validator set using `min(sha256(peerUID || cycle || stateRoot))`
-2. The proposer forms a **triad** with the next two peers in the sorted set
-3. The triad collects pending hashes, builds a block, and each member signs with **Dilithium3**
+2. The proposer collects pending hashes via gossip, builds a block, inserts into the SMT, and broadcasts the proposal
+3. Non-proposer peers insert the same entries into their local SMT, verify the root matches, and co-sign with **Dilithium3**
 4. With **3/3 signatures**, the block is finalized and appended to the chain
-5. The **Sparse Merkle Tree** updates its root to reflect the new anchors
+5. Service operators register **sub-chains** (one per service), submit entries, and periodically **anchor** the sub-chain state root into the parent chain
 6. Each validator gossips its heartbeat; the **Laplacian λ₁** eigenvalue of the latency matrix supervises network diffusion
 
 ## For whom
@@ -69,13 +74,17 @@ provectl verify --hash <sha256>
 
 ```
 provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
-                ↕                         ↕
-          pipeline-sim               Libp2p (future)
+                 ↕                         ↕
+           pipeline-sim               Libp2p (future)
+                 ↕
+           SubChainManager (per-service SMT → anchoring → parent chain)
+                 ↕
+           Transport (Kyber1024 KEM → ChaCha20-Poly1305 AEAD)
 ```
 
 ## Current status
 
-`RunCycle()` operates in **single-node mode** — the proposer is always the local node. `SelectTriad()` and `VerifyQuorum()` are implemented and tested but not yet wired into the live cycle loop (see [issue #5](https://github.com/had-nu/gleipnir/issues/5)). What you get today is an SMT-anchored, Dilithium3-signed single-signer log, not a 3-signature quorum.
+`RunCycle()` supports **single-node** (`NewEngine`) and **multi-node** (`NewEngineWithPeers` + `GossipChannel`) modes. The multi-node path builds blocks via gossip, verifies SMT root replication, and collects Dilithium3 co-signatures. Sub-chains (`SubChainManager`) enable per-service anchoring with cross-chain proofs. Transport layer (`pkg/transport`) provides KEM-authenticated AEAD channels (Kyber1024 + ChaCha20-Poly1305).
 
 ## Stack
 
@@ -83,6 +92,8 @@ provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
 |-----------|------------|
 | Consensus | Hash-based leader election + Dilithium3 triad |
 | State     | Sparse Merkle Tree (Blake3, depth 256) |
+| Transport | Kyber1024 KEM + ChaCha20-Poly1305 AEAD |
+| Sub-chains | Per-service SMT + dual-Merkle cross-chain proofs |
 | Network   | gRPC (future: Libp2p) |
 | Supervision | Laplacian λ₁ diffusion |
 | Language  | Go |

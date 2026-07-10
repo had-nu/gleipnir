@@ -63,25 +63,19 @@ func TestKyberUsageAudit(t *testing.T) {
 		t.Logf("  %s: %s", m.file, m.line)
 	}
 
-	// Kyber1024 should NOT be used for its intended purpose (KEM) yet.
-	// Acceptable: import/declaration, comments, docs. Unacceptable:
-	// actual key exchange, encryption, or KEM operations.
-	// Count non-trivial usages.
-	nonTrivial := 0
+	// Kyber1024 IS now used for its intended purpose (KEM).
+	// Issue #2 can be closed. Verify the actual KEM functions are present.
+	hasKEM := false
 	for _, m := range matches {
-		line := strings.ToLower(m.line)
-		if strings.Contains(line, "import") || strings.Contains(line, "//") || strings.Contains(line, "/*") {
-			continue
-		}
-		if strings.Contains(line, "kyber") || strings.Contains(line, "kem") {
-			nonTrivial++
+		if strings.Contains(m.line, "KyberGenerateKey") || strings.Contains(m.line, "KyberEncapsulate") || strings.Contains(m.line, "KyberDecapsulate") {
+			hasKEM = true
 		}
 	}
 
-	if nonTrivial > 0 {
-		t.Logf("WARNING: %d non-trivial Kyber1024/KEM references found — issue #2 may need updating", nonTrivial)
+	if hasKEM {
+		t.Log("CONFIRMED: Kyber1024 KEM is now functional — issue #2 resolved")
 	} else {
-		t.Log("Confirmed: Kyber1024 is not used for its intended purpose (KEM) — issue #2 is accurate")
+		t.Log("WARNING: Kyber1024 still not used for KEM — issue #2 remains open")
 	}
 }
 

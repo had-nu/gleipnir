@@ -23,11 +23,12 @@ Immutable Provenance Chain (IPC) v1 reference implementation.
 │   ├── provenanced/       # gRPC server daemon
 │   └── pipeline-sim/      # Multi-node pipeline simulator
 ├── pkg/
-│   ├── chain/             # Protocol types (Block, Entry, AnchorProof)
-│   ├── consensus/         # Hash-based leader election, triad, quorum, Engine
+│   ├── chain/             # Protocol types (Block, Entry, AnchorProof, SubChain)
+│   ├── consensus/         # Hash-based leader election, triad, quorum, Engine, SubChainManager
 │   ├── identity/          # uID0 soulbound, Dilithium3, Kyber1024
 │   ├── smt/               # Sparse Merkle Tree (Blake3, depth 256)
 │   ├── state/             # NetworkState, Laplacian supervision
+│   ├── transport/         # KEM handshake + ChaCha20-Poly1305 secure channel
 │   └── server/            # gRPC server + generated protobuf
 ├── client/                # Go client library (gRPC wrapper)
 ├── spec/                  # Protocol specification
@@ -51,10 +52,11 @@ provectl (CLI)         pipeline-sim
           └──→ pkg/consensus ──→ pkg/chain
                    ├──→ pkg/identity
                    ├──→ pkg/smt
-                   └──→ pkg/state
+                   ├──→ pkg/state
+                   └──→ pkg/transport
 ```
 
-**Rule**: code in `pkg/` never imports `cmd/` or `pkg/server/`. The core packages (`chain`, `consensus`, `identity`, `smt`, `state`) have zero gRPC or CLI dependencies.
+**Rule**: code in `pkg/` never imports `cmd/` or `pkg/server/`. The core packages (`chain`, `consensus`, `identity`, `smt`, `state`, `transport`) have zero gRPC or CLI dependencies.
 
 ---
 
@@ -66,11 +68,12 @@ Gleipnir is a self-contained, tokenless consensus network that anchors provenanc
 
 | Layer | Responsibility | Package |
 |-------|---------------|---------|
-| **Protocol types** | Block, ProvenanceEntry, AnchorProof, Anchorer interface | `pkg/chain/` |
-| **Core engine** | Hash-based leader election, Dilithium3 signing, SMT state, cycles | `pkg/consensus/` |
-| **Identity** | uID0 soulbound tokens, post-quantum keys | `pkg/identity/` |
+| **Protocol types** | Block, ProvenanceEntry, AnchorProof, SubChain types, Anchorer interface | `pkg/chain/` |
+| **Core engine** | Hash-based leader election, Dilithium3 signing, SMT state, cycles, sub-chain manager | `pkg/consensus/` |
+| **Identity** | uID0 soulbound tokens, Dilithium3, Kyber1024 KEM | `pkg/identity/` |
 | **State** | Network topology, Laplacian eigenvalues | `pkg/state/` |
 | **SMT** | Blake3 Sparse Merkle Tree (depth 256) | `pkg/smt/` |
+| **Transport** | KEM handshake + AEAD secure channel | `pkg/transport/` |
 | **gRPC server** | Network API (optional — not needed for embedded use) | `pkg/server/` |
 
 ### Embedded vs sidecar
@@ -80,19 +83,18 @@ Gleipnir is designed to work in two modes:
 - **Embedded**: `consensus.NewEngine(node, interval)` — runs inside your process. Import `github.com/had-nu/gleipnir/pkg/consensus`. No gRPC needed.
 - **Sidecar**: `provenanced` daemon with gRPC API. Connect via `client.New()` for remote anchoring.
 
-### Current status: single-node mode
+### Current status: multi-node + sub-chains
 
-`RunCycle()` currently operates in **single-node mode only**. The proposer is always the local node because `SelectProposer()` is called against a one-element peer list (`engine.go:146`). `SelectTriad()` and `VerifyQuorum()` are implemented and unit-tested but **not wired into the live cycle loop** — see issue [#5](https://github.com/had-nu/gleipnir/issues/5).
+`RunCycle()` supports both **single-node** and **multi-node** modes via `NewEngine()` (no gossip) and `NewEngineWithPeers()` (gossip channel + peer list). Multi-node uses a `GossipChannel` abstraction (`MemoryBus` for testing, real transport in development). The proposer broadcasts the block to all peers; non-proposers read the proposal, verify the SMT root, and co-sign with Dilithium3. Triad co-signatures (3/3) are collected from gossip and embedded in the block.
+
+**Sub-chains** extend the model: each sub-chain maintains its own SMT and periodic anchoring into the parent chain via labelled `ProvenanceEntry` (`Label: "subchain:anchor"`). Cross-chain proofs verify inclusion in both the sub-chain SMT and the parent chain SMT.
 
 What you get today:
-- SMT-anchored, Dilithium3-signed **single-signer log** with 1-of-3 signature slots populated
-- No multi-node quorum (3/3 signatures)
+- **Multi-node consensus**: N-node gossip-based cycle with deterministic proposer selection, verified SMT root replication, and quorum signature collection
+- **Kyber1024 KEM**: key encapsulation for encrypted peer channels (functional, not yet wired into automatic peer discovery)
+- **ChaCha20-Poly1305 secure transport**: AEAD-encrypted messages with random nonces, keyed via HKDF(Kyber1024 shared secret, sorted peer IDs)
+- **Sub-chain registry**: per-service SMT + anchor lifecycle via `SubChainManager` (`Register`, `Submit`, `Anchor`, `Prove`, `VerifyCrossChain`)
 - No remote peer discovery (gRPC reachable, but no libp2p peer exchange)
-
-What the multi-node design specifies (future):
-- 3-signature Dilithium3 quorum per block
-- Hash-based leader election across N validators
-- Triad formation and gossip
 
 ---
 
@@ -103,25 +105,32 @@ One cycle = one anchored block. The ticker-driven loop:
 ```
 1. TICK ─→ Lock state
               │
-2.           Collect pending entries
-              │
-3.           Select proposer via hash
+2.           Select proposer via hash
                min(sha256(peerUID || cycle || stateRoot))
               │
-4.           Form triad (proposer + next 2 peers)
+3.           Proposer path:
+               ├─ Collect entries (gossip.Snapshot() or local pending)
+               ├─ Dedup by hash
+               ├─ Insert into SMT, compute StateRoot
+               ├─ Build Block
+               ├─ Sign BlockHash (Dilithium3)
+               ├─ gossip.Propose(block)
+               └─ gossip.PublishSig(sig)
               │
-5.           Build block:
-               - Index, PrevHash, entries
-               - Insert entries into SMT
-               - Compute StateRoot
-               - Compute BlockHash (SHA-256)
-               - Sign with Dilithium3
+             Non-proposer path:
+               ├─ block ← gossip.GetProposed(cycle)
+               ├─ Insert entries into local SMT
+               ├─ Verify local StateRoot == proposer's
+               ├─ Sign BlockHash (Dilithium3)
+               └─ gossip.PublishSig(sig)
               │
-6.           Apply state transition:
+4.           Collect triad co-signatures (≥3 peers)
+              │
+5.           Apply state transition:
                - Update Laplacian λ₁ from heartbeats
                - Increment cycle
               │
-7.           Append block ─→ Unlock
+6.           Append block ─→ Unlock
 ```
 
 Exported as `Engine.RunCycle()` for manual triggering. The ticker runs `RunCycle()` on `cycleInterval`.
@@ -130,16 +139,15 @@ Exported as `Engine.RunCycle()` for manual triggering. The ticker runs `RunCycle
 
 ```
 Engine.Start()
-  └→ cycleLoop()                     [engine.go:116]
-       └→ RunCycle()                 [engine.go:130]
-            ├→ SelectProposer()      [triad.go:11]  † single-node only
+  └→ cycleLoop()                     [engine.go:162]
+       └→ RunCycle()                 [engine.go:176]
+            ├→ SelectProposer()      [triad.go:11]
+            ├→ gossip.Snapshot/Propose/GetProposed/PublishSig/GetSigs [gossip.go]
             ├→ st.Insert()           [smt.go]
             ├→ st.Prove()            [smt.go]
             ├→ identity.SignDilithium() [dilithium.go]
             └→ state.Apply()         [apply.go]
 ```
-
-† `SelectProposer()` is called with a one-element peer list. `SelectTriad()` and `VerifyQuorum()` are not invoked by the current cycle loop. See issue [#5](https://github.com/had-nu/gleipnir/issues/5).
 
 ---
 
@@ -155,23 +163,35 @@ Engine.Start()
 | `NetworkHealth` | Lambda1, ActivePeers, TotalPeers, BlockHeight, PendingHashes | Engine status |
 | `Ticket` | Hash, Status, BlockIndex | Acknowledge a submission |
 | `Anchorer` | (interface, see below) | Embedding contract |
+| `SubChainID` | `[32]byte` | Blake3 identifier for a sub-chain |
+| `SubChainDescriptor` | ID, Name, Owner, Genesis, CreatedAt, Active | Sub-chain registration metadata |
+| `CrossChainAnchor` | SubChainID, StateRoot, PrevAnchorHash, Height, Timestamp | Sub-chain root anchor record |
+| `CrossChainProof` | EntryHash, SubChainRoot, SubChainProof, AnchorHash, AnchorBlock, ParentRoot, ParentProof | Dual-Merkle cross-chain proof |
 
-### `pkg/consensus/` — Engine and selection
+### `pkg/consensus/` — Engine, gossip, and sub-chains
 
 - `Engine` — central state machine. Holds the SMT, block chain, pending queue, anchored map.
 - `Node` — identity + address + peer list for a validator.
+- `Peer` — remote node identity + address + liveness flag.
 - `SelectProposer()` — hash-based: peer with lowest `sha256(peerUID || cycle || stateRoot)`.
 - `SelectTriad()` — proposer + next two peers in sorted set.
 - `VerifyQuorum()` — 3/3 Dilithium3 signature check.
+- `GossipChannel` — interface for inter-node communication (`Publish`, `Snapshot`, `Propose`, `GetProposed`, `PublishSig`, `GetSigs`, `RemoveEntries`).
+- `MemoryBus` — in-memory implementation of `GossipChannel`, used for single-process multi-node tests.
+- `SubChainManager` — sub-chain lifecycle: `Register(name, owner)`, `Submit(id, entry)`, `Anchor(id)`, `Prove(id, entryHash)`, `VerifyCrossChain(proof, parentRoot)`. Each sub-chain has its own SMT; anchoring flushes pending entries, computes the state root, and enqueues a `ProvenanceEntry` with `Label: "subchain:anchor"` into the parent chain.
 
-### `pkg/identity/` — Post-quantum identity
+### `pkg/identity/` — Post-quantum identity + KEM
 
 - `UIDZeroSoulbound` — CBOR-serializable identity token. Contains RootID, Dilithium3 keypair, merkle proofs, entropy, and recovery info.
 - `NewUIDZero(seed, simulated)` — create identity. The `simulated` flag generates deterministically for dev.
 - `GenerateDilithiumKey(rng)` → (pk, sk) — ML-DSA-65 (Dilithium3).
 - `SignDilithium(sk, msg)` → sig.
 - `VerifyDilithium(pk, msg, sig)` → bool.
+- `KyberGenerateKey()` → (pk, sk) — Kyber1024 KEM keypair.
+- `KyberEncapsulate(pk)` → (ct, ss) — generate ciphertext + shared secret.
+- `KyberDecapsulate(sk, ct)` → ss — recover shared secret.
 - `Hash(data)` → blake3.Sum256.
+- `Derive(context, material, length)` → Blake3 `DeriveKey`.
 
 ### `pkg/smt/` — Sparse Merkle Tree
 
@@ -184,6 +204,18 @@ Engine.Start()
 - `BulkInsert(keys, values)` → batch insert.
 
 Internal storage uses two maps: `data map[[32]byte][]byte` for leaves and `cache map[[32]byte][32]byte` for computed nodes.
+
+### `pkg/transport/` — KEM-authenticated secure channel
+
+- `PeerInfo` — peer identity + public key from handshake.
+- `Message` / `MessageType` — typed message envelope.
+- `SecureConn` — AEAD-encrypted connection over TCP.
+  - `ServerHandshake(conn, sk, pk, peerID)` → `(*SecureConn, PeerInfo, error)` — responder side of the KEM handshake.
+  - `ClientHandshake(conn, sk, pk, peerID)` → `(*SecureConn, PeerInfo, error)` — initiator side.
+  - `WriteMessage(data)` → encrypt with ChaCha20-Poly1305 (random 12-byte nonce prepended).
+  - `ReadMessage()` → decrypt and return plaintext.
+- Handshake: exchange Dilithium3 public keys → Kyber1024 encapsulate/decapsulate → HKDF(key, sorted peer IDs) → single shared AEAD key.
+- Message format: `[4-byte frame length][12-byte nonce][AEAD ciphertext]`.
 
 ### `pkg/state/` — Network state and supervision
 
@@ -227,6 +259,24 @@ type Anchorer interface {
 ```
 
 `consensus.Engine` implements `chain.Anchorer` directly. You can type-switch or inject.
+
+### `consensus.GossipChannel`
+
+Abstract network layer for multi-node operation:
+
+```go
+type GossipChannel interface {
+    Publish(entry chain.ProvenanceEntry)
+    Snapshot() []chain.ProvenanceEntry
+    RemoveEntries(remove map[[32]byte]bool)
+    Propose(block chain.Block, proposerID string)
+    GetProposed(cycle uint64) *chain.Block
+    PublishSig(sig BlockSig)
+    GetSigs(cycle uint64) []BlockSig
+}
+```
+
+`MemoryBus` implements `GossipChannel` in-memory for single-process multi-node tests. A production implementation (e.g., over libp2p GossipSub) implements the same interface.
 
 ### `state.Config`
 
@@ -395,7 +445,8 @@ Tags follow `vMAJOR.MINOR.PATCH`. Breaking changes increment major. Pre-release 
 | Limitation | Impact | Issue | Status |
 |------------|--------|-------|--------|
 | Leader election is a deterministic hash race, not a true VRF | Predictable proposer, grinding attack surface | [#1](https://github.com/had-nu/gleipnir/issues/1) | Open |
-| Kyber1024 not yet used for its intended purpose (KEM) | No encrypted peer channels | [#2](https://github.com/had-nu/gleipnir/issues/2) | Open |
+| Kyber1024 KEM and ChaCha20-Poly1305 transport implemented but not wired into automatic peer discovery | Must manually configure peer keys | [#2](https://github.com/had-nu/gleipnir/issues/2) | Resolved |
 | 3/3 quorum tolerates zero faults (n=3, f=0) | Single offline proposer stalls the cycle (mitigated by view-change skip) | [#3](https://github.com/had-nu/gleipnir/issues/3) | Open |
-| Multi-node triad/quorum path implemented but not wired into RunCycle | Quorum guarantees advertised in architecture overview do not currently apply to live cycles | [#5](https://github.com/had-nu/gleipnir/issues/5) | Open |
 | Eigendecomposition O(n³) per λ₁ recomputation | Scales poorly above 100 peers (mitigated by LambdaInterval) | [#4](https://github.com/had-nu/gleipnir/issues/4) | Open |
+| Sub-chain registry lacks automatic periodic anchoring | Manual `Anchor()` call required | — | Open |
+| Transport test `TestEncryptedExchange` has intermittent EOF | Nonce or framing edge case under concurrent read/write | — | Investigate |
