@@ -94,6 +94,8 @@ What you get today:
 - **Kyber1024 KEM**: key encapsulation for encrypted peer channels (functional, not yet wired into automatic peer discovery)
 - **ChaCha20-Poly1305 secure transport**: AEAD-encrypted messages with random nonces, keyed via HKDF(Kyber1024 shared secret, sorted peer IDs)
 - **Sub-chain registry**: per-service SMT + anchor lifecycle via `SubChainManager` (`Register`, `Submit`, `Anchor`, `Prove`, `VerifyCrossChain`)
+- **Hardened submission API**: `Enqueue` validates entries (rejects zero hashes, empty submitters, oversized labels) and enforces rate limits (total pending + per-submitter caps); `RunCycle` recovers from panics; `Engine.Stop` halts submission cleanly (see `pkg/consensus/api.go`)
+- **Contract-derived UID0**: `NewUIDZeroFromContract(contractHash, nodeSalt, simulated)` derives a deterministic, reproducible UID0 root identity bound to a company's contract hash (DRBG-seeded Dilithium3 key), enabling verifiable "this node speaks for contract X" proofs (`pkg/identity/contract.go`)
 - No remote peer discovery (gRPC reachable, but no libp2p peer exchange)
 
 ---
