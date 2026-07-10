@@ -1,4 +1,4 @@
-// IPC VRF pure proposer selection and triad formation.
+// IPC hash-based deterministic proposer selection and triad formation.
 package consensus
 
 import (
@@ -8,6 +8,8 @@ import (
 
 type Triad [3][]byte
 
+// SelectProposer picks the peer with the lowest hash(peerUID || cycle || stateRoot).
+// This is a deterministic leader election, not a Verifiable Random Function.
 func SelectProposer(peers []Peer, cycle uint64, stateRoot []byte) (Peer, []byte) {
 	seed := make([]byte, 8+len(stateRoot))
 	binary.LittleEndian.PutUint64(seed, cycle)

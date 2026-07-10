@@ -24,7 +24,7 @@ Immutable Provenance Chain (IPC) v1 reference implementation.
 │   └── pipeline-sim/      # Multi-node pipeline simulator
 ├── pkg/
 │   ├── chain/             # Protocol types (Block, Entry, AnchorProof)
-│   ├── consensus/         # VRF selection, triad, quorum, Engine
+│   ├── consensus/         # Hash-based leader election, triad, quorum, Engine
 │   ├── identity/          # uID0 soulbound, Dilithium3, Kyber1024
 │   ├── smt/               # Sparse Merkle Tree (Blake3, depth 256)
 │   ├── state/             # NetworkState, Laplacian supervision
@@ -60,14 +60,14 @@ provectl (CLI)         pipeline-sim
 
 ## Architecture overview
 
-Gleipnir is a self-contained, tokenless consensus network that anchors provenance hashes into an immutable chain. It replaces external dependencies like Ethereum with a minimal VRF-based protocol.
+Gleipnir is a self-contained, tokenless consensus network that anchors provenance hashes into an immutable chain. It replaces external dependencies like Ethereum with a minimal hash-based election protocol.
 
 ### Three-tier model
 
 | Layer | Responsibility | Package |
 |-------|---------------|---------|
 | **Protocol types** | Block, ProvenanceEntry, AnchorProof, Anchorer interface | `pkg/chain/` |
-| **Core engine** | VRF selection, Dilithium3 signing, SMT state, cycles | `pkg/consensus/` |
+| **Core engine** | Hash-based leader election, Dilithium3 signing, SMT state, cycles | `pkg/consensus/` |
 | **Identity** | uID0 soulbound tokens, post-quantum keys | `pkg/identity/` |
 | **State** | Network topology, Laplacian eigenvalues | `pkg/state/` |
 | **SMT** | Blake3 Sparse Merkle Tree (depth 256) | `pkg/smt/` |
@@ -91,7 +91,7 @@ One cycle = one anchored block. The ticker-driven loop:
               │
 2.           Collect pending entries
               │
-3.           Select proposer via VRF
+3.           Select proposer via hash
                min(sha256(peerUID || cycle || stateRoot))
               │
 4.           Form triad (proposer + next 2 peers)
@@ -144,7 +144,7 @@ Engine.Start()
 
 - `Engine` — central state machine. Holds the SMT, block chain, pending queue, anchored map.
 - `Node` — identity + address + peer list for a validator.
-- `SelectProposer()` — VRF pure: peer with lowest `sha256(peerUID || cycle || stateRoot)`.
+- `SelectProposer()` — hash-based: peer with lowest `sha256(peerUID || cycle || stateRoot)`.
 - `SelectTriad()` — proposer + next two peers in sorted set.
 - `VerifyQuorum()` — 3/3 Dilithium3 signature check.
 
@@ -155,7 +155,6 @@ Engine.Start()
 - `GenerateDilithiumKey(rng)` → (pk, sk) — ML-DSA-65 (Dilithium3).
 - `SignDilithium(sk, msg)` → sig.
 - `VerifyDilithium(pk, msg, sig)` → bool.
-- `KyberDigest(data)` → hash using Kyber1024-style sponge.
 - `Hash(data)` → blake3.Sum256.
 
 ### `pkg/smt/` — Sparse Merkle Tree
@@ -219,10 +218,10 @@ Controls Laplacian diffusion parameters:
 
 ```go
 type Config struct {
-    LambdaTolerance  float64   // default 0.01
-    ConvergenceLimit int       // default 100
-    MaxPeers         int       // default 50
-    LatencyDecay     float64   // default 0.8
+    Eta             float64  // diffusion rate, default 0.28
+    DecayRate       float64  // status decay per cycle, default 0.05
+    MinLambda1      float64  // minimum λ₁ threshold, default 0.10
+    LambdaInterval  uint64   // recompute λ₁ every N cycles (0 = every cycle)
 }
 ```
 
@@ -372,3 +371,14 @@ Tags follow `vMAJOR.MINOR.PATCH`. Breaking changes increment major. Pre-release 
 | Embed in another project | `pkg/chain/segment.go` → `Anchorer` |
 | Debug a consensus failure | `pkg/consensus/engine.go` → `RunCycle()` log output |
 | Run a local network | `docker compose up -d` |
+
+---
+
+## Known limitations and roadmap
+
+| Limitation | Impact | Issue | Status |
+|------------|--------|-------|--------|
+| Leader election is a deterministic hash race, not a true VRF | Predictable proposer, grinding attack surface | [#1](https://github.com/had-nu/gleipnir/issues/1) | Open |
+| Kyber1024 not yet used for its intended purpose (KEM) | No encrypted peer channels | [#2](https://github.com/had-nu/gleipnir/issues/2) | Open |
+| 3/3 quorum tolerates zero faults (n=3, f=0) | Single offline proposer stalls the cycle (mitigated by view-change skip) | [#3](https://github.com/had-nu/gleipnir/issues/3) | Open |
+| Eigendecomposition O(n³) per λ₁ recomputation | Scales poorly above 100 peers (mitigated by LambdaInterval) | [#4](https://github.com/had-nu/gleipnir/issues/4) | Open |

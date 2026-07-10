@@ -21,13 +21,13 @@ Provenance data (hash anchors, document fingerprints, CI/CD attestations) is sca
 
 ## Solution
 
-A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a VRF-selected triad of validators.
+A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a hash-selected triad of validators.
 
 ## What it delivers
 
 - **Immutable hash chain** — every anchored hash is permanently recorded in a linear, signed chain of blocks
 - **Post-quantum signatures** — Dilithium3 3/3 quorum, no single point of compromise
-- **VRF-based consensus** — fair, unpredictable proposer selection via verifiable random function seeded by state root
+- **Hash-based leader election** — deterministic proposer selection via `min(sha256(peerUID || cycle || stateRoot))`
 - **Instant finality** — one cycle = one block = final; no forks, no rollbacks
 - **Sparse Merkle Tree state** — compact, verifiable state root via Blake3-based SMT (depth 256)
 - **Self-supervising network** — Laplacian diffusion monitors topology health from heartbeat latencies
@@ -35,7 +35,7 @@ A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an i
 
 ## How it works
 
-1. A **VRF round** selects a proposer from the active validator set using `min(sha256(peerUID || cycle || stateRoot))`
+1. A **hash round** selects a proposer from the active validator set using `min(sha256(peerUID || cycle || stateRoot))`
 2. The proposer forms a **triad** with the next two peers in the sorted set
 3. The triad collects pending hashes, builds a block, and each member signs with **Dilithium3**
 4. With **3/3 signatures**, the block is finalized and appended to the chain
@@ -77,7 +77,7 @@ provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
 
 | Component | Technology |
 |-----------|------------|
-| Consensus | VRF selection + Dilithium3 triad |
+| Consensus | Hash-based leader election + Dilithium3 triad |
 | State     | Sparse Merkle Tree (Blake3, depth 256) |
 | Network   | gRPC (future: Libp2p) |
 | Supervision | Laplacian λ₁ diffusion |

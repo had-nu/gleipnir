@@ -1,7 +1,7 @@
 # Immutable Provenance Chain (IPC) v1 — Gleipnir reference implementation
 
 Simplified endocybernetic consensus for provenance anchoring:
-- VRF-based proposer selection (not round-robin)
+- Hash-based deterministic proposer selection (not round-robin)
 - Dilithium3 3/3 quorum signing
 - Sparse Merkle Tree for state root
 - Laplacian λ₁ diffusion supervision
@@ -16,7 +16,7 @@ CLI (provectl) → gRPC API → Consensus Engine → SMT State → Chain Storage
 
 ## Consensus
 
-- **VRF pure**: proposer selected by `min(sha256(peerUID || cycle || stateRoot))`
+- **Hash-based**: proposer selected by `min(sha256(peerUID || cycle || stateRoot))`
 - **Triad**: proposer + next 2 peers form the signing triad
 - **Quorum**: 3/3 Dilithium3 signatures required to finalize a block
 - **Cycle**: each cycle produces one anchored block

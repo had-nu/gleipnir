@@ -39,16 +39,21 @@ func Apply(s NetworkState, prevRoot []byte, heartbeats []string, cfg Config) (Ne
 	}
 
 	newGraph := s.Graph
+	nextCycle := s.Cycle + 1
 
-	l := BuildLaplacian(newGraph, newNodes)
-	lambda1 := ComputeLambda1(l)
+	lambda1 := s.Lambda1
+	recompute := cfg.LambdaInterval == 0 || s.Lambda1 == 0 || nextCycle%cfg.LambdaInterval == 0
+	if recompute {
+		l := BuildLaplacian(newGraph, newNodes)
+		lambda1 = ComputeLambda1(l)
+	}
 
 	if lambda1 < cfg.MinLambda1 {
 		return NetworkState{}, ErrNetworkFragmented
 	}
 
 	next := NetworkState{
-		Cycle:   s.Cycle + 1,
+		Cycle:   nextCycle,
 		Nodes:   newNodes,
 		Graph:   newGraph,
 		Lambda1: lambda1,

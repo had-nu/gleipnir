@@ -149,6 +149,13 @@ func (e *Engine) RunCycle() {
 		rootArr[:],
 	)
 
+	proposerHex := hex.EncodeToString(proposer.UID.RootID)
+	if nodeState, ok := e.state.Nodes[proposerHex]; ok && nodeState.Status <= 0 {
+		log.Printf("IPC cycle %d: proposer %s is inactive, skipping", cycle, proposerHex)
+		e.state.Cycle++
+		return
+	}
+
 	prevHash := make([]byte, 32)
 	if len(e.blocks) > 0 {
 		prevHash = e.blocks[len(e.blocks)-1].BlockHash
