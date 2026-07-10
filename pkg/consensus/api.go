@@ -1,35 +1,21 @@
 package consensus
 
 import (
-	"errors"
+	"github.com/had-nu/gleipnir/pkg/validation"
 )
 
 var (
-	ErrInvalidHash      = errors.New("consensus: invalid hash (all-zero)")
-	ErrInvalidSubmitter = errors.New("consensus: invalid submitter (empty)")
-	ErrLabelTooLong     = errors.New("consensus: label exceeds maximum length")
-	ErrRateLimited      = errors.New("consensus: rate limit exceeded (pending queue full)")
-	ErrEngineStopped    = errors.New("consensus: engine stopped")
+	ErrInvalidHash      = validation.ErrInvalidHash
+	ErrInvalidSubmitter = validation.ErrInvalidSubmitter
+	ErrLabelTooLong     = validation.ErrLabelTooLong
+	ErrRateLimited      = validation.ErrRateLimited
+	ErrEngineStopped    = validation.ErrEngineStopped
 )
 
-const (
-	DefaultMaxLabelLen    = 256
-	DefaultMaxTotalPending = 100000
-	DefaultMaxPendingPerSubmitter = 5000
-)
-
-type APILimits struct {
-	MaxLabelLen              int
-	MaxTotalPending          int
-	MaxPendingPerSubmitter   int
-}
+type APILimits = validation.APILimits
 
 func DefaultAPILimits() APILimits {
-	return APILimits{
-		MaxLabelLen:             DefaultMaxLabelLen,
-		MaxTotalPending:         DefaultMaxTotalPending,
-		MaxPendingPerSubmitter:  DefaultMaxPendingPerSubmitter,
-	}
+	return validation.DefaultAPILimits()
 }
 
 func (e *Engine) SetAPILimits(cfg APILimits) {
@@ -46,7 +32,7 @@ func (e *Engine) apiLimitsLocked() APILimits {
 }
 
 func validateEntry(hash [32]byte, submitter []byte, label string, cfg APILimits) error {
-	if isZeroHash(hash) {
+	if validation.IsZeroHash(hash) {
 		return ErrInvalidHash
 	}
 	if len(submitter) == 0 {
@@ -56,23 +42,4 @@ func validateEntry(hash [32]byte, submitter []byte, label string, cfg APILimits)
 		return ErrLabelTooLong
 	}
 	return nil
-}
-
-func isZeroHash(h [32]byte) bool {
-	for _, b := range h {
-		if b != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-func (e *Engine) countPendingBySubmitter(submitter []byte) int {
-	n := 0
-	for _, entry := range e.pending {
-		if string(entry.Submitter) == string(submitter) {
-			n++
-		}
-	}
-	return n
 }

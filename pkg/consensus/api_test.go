@@ -7,6 +7,7 @@ import (
 
 	"github.com/had-nu/gleipnir/pkg/chain"
 	"github.com/had-nu/gleipnir/pkg/identity"
+	"github.com/had-nu/gleipnir/pkg/validation"
 )
 
 func chainEntry(hash [32]byte, submitter []byte, label string) chain.ProvenanceEntry {
@@ -21,7 +22,7 @@ func apiEngine() *Engine {
 	uid := identity.NewUIDZero("api-test", true)
 	node := Node{UID: *uid, Addr: "self"}
 	eng := NewEngine(node, time.Hour)
-	eng.Start()
+	// Don't start the cycle loop - just test validation logic
 	return eng
 }
 
@@ -41,7 +42,7 @@ func TestSubmitValidation(t *testing.T) {
 	}
 
 	// Oversized label rejected
-	bigLabel := make([]byte, DefaultMaxLabelLen+1)
+	bigLabel := make([]byte, validation.DefaultAPILimits().MaxLabelLen+1)
 	for i := range bigLabel {
 		bigLabel[i] = 'a'
 	}
