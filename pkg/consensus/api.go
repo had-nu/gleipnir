@@ -1,6 +1,8 @@
 package consensus
 
 import (
+	"time"
+
 	"github.com/had-nu/gleipnir/pkg/validation"
 )
 
@@ -22,6 +24,11 @@ func (e *Engine) SetAPILimits(cfg APILimits) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.apiLimits = cfg
+	// Update rate limiter if present
+	if e.rateLimiter != nil {
+		// Create new rate limiter with updated limits
+		e.rateLimiter = NewSubmitterLimiter(cfg.MaxPendingPerSubmitter, time.Minute)
+	}
 }
 
 func (e *Engine) apiLimitsLocked() APILimits {

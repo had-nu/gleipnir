@@ -81,6 +81,7 @@ func TestServerSubmitAndVerify(t *testing.T) {
 
 	submitResp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
 		Hash:      hash[:],
+		Submitter: []byte("test-submitter"),
 		Label:     "test",
 		Timestamp: time.Now().UnixNano(),
 	})
