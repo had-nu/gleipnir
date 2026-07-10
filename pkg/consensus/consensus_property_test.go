@@ -197,6 +197,9 @@ func TestSignatureNonMalleability(t *testing.T) {
 		StateRoot: make([]byte, 32),
 		Anchored:  []chain.ProvenanceEntry{{Hash: [32]byte{42}}},
 		Timestamp: 1000,
+		Quorum:    chain.DefaultQuorumConfig(),
+		Validators: [][]byte{uid.PublicKey},
+		Sigs:       make([][]byte, 0, 1),
 	}
 
 	hash := computeBlockHash(block)
@@ -204,11 +207,11 @@ func TestSignatureNonMalleability(t *testing.T) {
 	sig2 := identity.SignDilithium(uid.SecretKey, hash)
 
 	blockWithSig1 := block
-	blockWithSig1.Sigs[0] = sig1
+	blockWithSig1.Sigs = [][]byte{sig1}
 	blockWithSig1.BlockHash = hash
 
 	blockWithSig2 := block
-	blockWithSig2.Sigs[0] = sig2
+	blockWithSig2.Sigs = [][]byte{sig2}
 	blockWithSig2.BlockHash = hash
 
 	h1 := computeBlockHash(blockWithSig1)
@@ -239,13 +242,23 @@ func TestForgedSignatureRejection(t *testing.T) {
 	sigB := identity.SignDilithium(skB, msg)
 
 	// Valid quorum with 3 A-sigs
-	err = VerifyQuorum(msg, [3][]byte{sigA, sigA, sigA}, [3][]byte{pkA, pkA, pkA})
+	quorum := chain.DefaultQuorumConfig()
+	pks := make([][]byte, 3)
+	for i := range pks {
+		pks[i] = pkA
+	}
+	sigs := make([][]byte, 3)
+	for i := range sigs {
+		sigs[i] = sigA
+	}
+	err = VerifyQuorum(msg, sigs, pks, quorum)
 	if err != nil {
 		t.Fatalf("expected valid quorum to pass: %v", err)
 	}
 
 	// Forged: sig from key B replaces one A-sig
-	err = VerifyQuorum(msg, [3][]byte{sigA, sigB, sigA}, [3][]byte{pkA, pkA, pkA})
+	sigs[1] = sigB
+	err = VerifyQuorum(msg, sigs, pks, quorum)
 	if err == nil {
 		t.Fatal("expected forged signature (valid sig from wrong key) to be rejected")
 	}

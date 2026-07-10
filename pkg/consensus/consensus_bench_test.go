@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/had-nu/gleipnir/pkg/chain"
 	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
@@ -40,8 +41,8 @@ func BenchmarkSelectTriad(b *testing.B) {
 
 func BenchmarkVerifyQuorum(b *testing.B) {
 	msg := []byte("benchmark block hash for quorum verification")
-	var pks [3][]byte
-	var sks [3][]byte
+	pks := make([][]byte, 3)
+	sks := make([][]byte, 3)
 	for i := 0; i < 3; i++ {
 		pk, sk, err := identity.GenerateDilithiumKey(rand.Reader)
 		if err != nil {
@@ -50,12 +51,13 @@ func BenchmarkVerifyQuorum(b *testing.B) {
 		pks[i] = pk
 		sks[i] = sk
 	}
-	var sigs [3][]byte
+	sigs := make([][]byte, 3)
 	for i := 0; i < 3; i++ {
 		sigs[i] = identity.SignDilithium(sks[i], msg)
 	}
+	quorum := chain.DefaultQuorumConfig()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		VerifyQuorum(msg, sigs, pks)
+		VerifyQuorum(msg, sigs, pks, quorum)
 	}
 }

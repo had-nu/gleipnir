@@ -67,46 +67,45 @@ func TestSelectTriad(t *testing.T) {
 func TestVerifyQuorum(t *testing.T) {
 	msg := []byte("test block hash")
 
-	var pks [3][]byte
-	var sks [3][]byte
+	var pks [][]byte
+	var sks [][]byte
 	for i := 0; i < 3; i++ {
 		pk, sk, err := identity.GenerateDilithiumKey(rand.Reader)
 		if err != nil {
 			t.Fatal(err)
 		}
-		pks[i] = pk
-		sks[i] = sk
+		pks = append(pks, pk)
+		sks = append(sks, sk)
 	}
 
-	var sigs [3][]byte
+	var sigs [][]byte
 	for i := 0; i < 3; i++ {
-		sigs[i] = identity.SignDilithium(sks[i], msg)
+		sigs = append(sigs, identity.SignDilithium(sks[i], msg))
 	}
 
-	err := VerifyQuorum(msg, sigs, pks)
+	quorum := chain.DefaultQuorumConfig()
+	err := VerifyQuorum(msg, sigs, pks, quorum)
 	if err != nil {
 		t.Fatalf("quorum should pass: %v", err)
 	}
 
-	wrongSigs := sigs
-	wrongSigs[0] = sigs[1]
+	// Test: signature from a NON-validator should be rejected
+	_, skOther, _ := identity.GenerateDilithiumKey(rand.Reader)
+	badSig := identity.SignDilithium(skOther, msg)
+	badSigs := make([][]byte, len(sigs))
+	copy(badSigs, sigs)
+	badSigs[0] = badSig
 
-	err = VerifyQuorum(msg, wrongSigs, pks)
+	err = VerifyQuorum(msg, badSigs, pks, quorum)
 	if err == nil {
-		t.Fatal("quorum should fail with wrong signature")
+		t.Fatal("quorum should fail with signature from non-validator")
 	}
-}
 
-func TestVerifyQuorumWrongKey(t *testing.T) {
-	msg := []byte("test")
-	_, sk, _ := identity.GenerateDilithiumKey(rand.Reader)
-	pk2, _, _ := identity.GenerateDilithiumKey(rand.Reader)
-
-	sig := identity.SignDilithium(sk, msg)
-
-	err := VerifyQuorum(msg, [3][]byte{sig, sig, sig}, [3][]byte{pk2, pk2, pk2})
+	// Test: fewer than RequiredSigs valid signatures should fail
+	tooFewSigs := sigs[:2] // only 2 valid sigs, need 3
+	err = VerifyQuorum(msg, tooFewSigs, pks, quorum)
 	if err == nil {
-		t.Fatal("quorum should fail with wrong public key")
+		t.Fatal("quorum should fail with too few valid signatures")
 	}
 }
 
@@ -307,12 +306,11 @@ func TestSingleNodeRunCycle(t *testing.T) {
 	}
 
 	last := eng.blocks[len(eng.blocks)-1]
-	if len(last.Sigs[0]) == 0 {
-		t.Error("Sigs[0] must be populated (single signature)")
+	if len(last.Sigs) == 0 || len(last.Sigs[0]) == 0 {
+		t.Error("Sigs must be populated (single signature)")
 	}
-	for i := 1; i < 3; i++ {
-		if len(last.Sigs[i]) != 0 {
-			t.Errorf("Sigs[%d] must be empty in single-node mode, got %d bytes", i, len(last.Sigs[i]))
-		}
+	// In single-node mode, we expect exactly 1 signature
+	if len(last.Sigs) != 1 {
+		t.Errorf("expected exactly 1 signature in single-node mode, got %d", len(last.Sigs))
 	}
 }

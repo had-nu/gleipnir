@@ -40,6 +40,9 @@ type Engine struct {
 
 	storage    EngineStorage // optional persistence
 	rateLimiter *SubmitterLimiter // sliding-window rate limiter
+
+	// Quorum configuration (BFT)
+	quorumConfig chain.QuorumConfig // BFT quorum config (n, m)
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -72,6 +75,11 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 	if peers == nil {
 		peers = []Peer{{UID: node.UID, Addr: node.Addr, Alive: true}}
 	}
+	// Default quorum: single-node = 1/1, multi-node = 3/3 (legacy)
+	quorumCfg := chain.DefaultQuorumConfig()
+	if len(peers) == 1 {
+		quorumCfg = chain.QuorumConfig{TotalValidators: 1, RequiredSigs: 1}
+	}
 	eng := &Engine{
 		node:          node,
 		peers:         peers,
@@ -87,6 +95,7 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		cancel:        cancel,
 		nowFunc:       time.Now,
 		rateLimiter:   NewSubmitterLimiter(5000, time.Minute), // 5000 per minute default
+		quorumConfig:  quorumCfg,
 	}
 	eng.state.Nodes[uidHex] = state.NodeState{
 		UID:    node.UID.RootID,
@@ -163,6 +172,14 @@ func (e *Engine) loadPersisted() {
 		if t, ok := smtTree.(*smt.SparseMerkleTree); ok {
 			e.st = t
 		}
+	}
+}
+
+func (e *Engine) SetQuorumConfig(config chain.QuorumConfig) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if config.IsValid() {
+		e.quorumConfig = config
 	}
 }
 
@@ -343,12 +360,19 @@ func (e *Engine) RunCycle() {
 		entries = unique
 
 		block = chain.Block{
-			Index:     cycle,
-			PrevHash:  prevHash,
-			Proposer:  proposer.UID.RootID,
-			Anchored:  entries,
-			Lambda1:   e.state.Lambda1,
-			Timestamp: e.nowFunc().UnixNano(),
+			Index:      cycle,
+			PrevHash:   prevHash,
+			Proposer:   proposer.UID.RootID,
+			Anchored:   entries,
+			Lambda1:    e.state.Lambda1,
+			Timestamp:  e.nowFunc().UnixNano(),
+			Quorum:     e.quorumConfig,
+			Validators: make([][]byte, 0, len(e.peers)),
+			Sigs:       make([][]byte, 0, len(e.peers)),
+		}
+
+		for _, p := range e.peers {
+			block.Validators = append(block.Validators, p.UID.PublicKey)
 		}
 
 		for i := range entries {
@@ -377,11 +401,14 @@ func (e *Engine) RunCycle() {
 		block.StateRoot = stateRootArr[:]
 		blockHash := computeBlockHash(block)
 		block.BlockHash = blockHash
-		block.Sigs[0] = identity.SignDilithium(e.node.UID.SecretKey, blockHash)
+
+		// Proposer signs first
+		proposerSig := identity.SignDilithium(e.node.UID.SecretKey, blockHash)
+		block.Sigs = append(block.Sigs, proposerSig)
 
 		if e.gossip != nil {
 			e.gossip.Propose(block, myUIDHex)
-			e.gossip.PublishSig(BlockSig{Cycle: cycle, Sig: block.Sigs[0], SignerID: myUIDHex})
+			e.gossip.PublishSig(BlockSig{Cycle: cycle, Sig: proposerSig, SignerID: myUIDHex})
 		}
 	} else {
 		// Non-proposer: read proposer's block from gossip
@@ -434,23 +461,27 @@ func (e *Engine) RunCycle() {
 		e.gossip.PublishSig(BlockSig{Cycle: cycle, Sig: mySig, SignerID: myUIDHex})
 	}
 
-	// Both proposer and non-proposer collect triad co-signatures
+	// Collect signatures from all peers (flexible quorum)
 	if e.gossip != nil && len(e.peers) >= 3 {
-		proposerIdx := findProposerIndex(e.peers, proposerHex)
-		triadIndices := []int{proposerIdx, (proposerIdx + 1) % len(e.peers), (proposerIdx + 2) % len(e.peers)}
 		sigs := e.gossip.GetSigs(cycle)
-		for i, peerIdx := range triadIndices {
-			if i == 0 && block.Sigs[0] != nil {
-				continue
-			}
-			for _, s := range sigs {
-				if s.SignerID == e.peers[peerIdx].UID.ID() {
-					block.Sigs[i] = s.Sig
-					break
-				}
+		sigMap := make(map[string][]byte)
+		for _, s := range sigs {
+			sigMap[s.SignerID] = s.Sig
+		}
+
+		// Collect signatures from all validators
+		validSigs := make([][]byte, 0, len(e.peers))
+		for _, p := range e.peers {
+			if sig, ok := sigMap[p.UID.ID()]; ok && len(sig) > 0 {
+				validSigs = append(validSigs, sig)
 			}
 		}
+		block.Sigs = validSigs
 	}
+
+	// Note: Quorum verification is now done by the caller after all engines
+	// have run their RunCycle for the current cycle. This allows all peers
+	// to sign before quorum is verified.
 
 	next, err := state.Apply(e.state, e.state.SupervisionRoot, []string{myUIDHex}, e.cfg)
 	if err != nil {

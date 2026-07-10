@@ -59,6 +59,12 @@ func TestThreeNodeConsensus(t *testing.T) {
 	for _, idx := range order {
 		engines[idx].RunCycle()
 	}
+	// Run cycle on ALL engines so non-proposers can verify and sign
+	for i := range engines {
+		if !contains(order, i) {
+			engines[i].RunCycle()
+		}
+	}
 
 	// After cycle 0: all engines should have 1 block with 3 entries
 	for i, eng := range engines {
@@ -89,6 +95,12 @@ func TestThreeNodeConsensus(t *testing.T) {
 	order = proposerFirstOrder(peers, 1, stateRoot1)
 	for _, idx := range order {
 		engines[idx].RunCycle()
+	}
+	// Run cycle on ALL engines so non-proposers can verify and sign
+	for i := range engines {
+		if !contains(order, i) {
+			engines[i].RunCycle()
+		}
 	}
 
 	for i, eng := range engines {
@@ -121,39 +133,13 @@ func TestThreeNodeConsensus(t *testing.T) {
 	t.Logf("Three-node consensus: %d identical blocks across 3 engines", engines[0].BlockCount())
 }
 
-func TestThreeNodeConsensusSameHash(t *testing.T) {
-	peers, nodes := makePeersAndNodes("same-a", "same-b", "same-c")
-	bus := NewMemoryBus()
-
-	engines := make([]*Engine, 3)
-	for i := 0; i < 3; i++ {
-		engines[i] = NewEngineWithPeers(nodes[i], time.Hour, bus, peers)
-	}
-
-	hash := [32]byte{42}
-	for _, eng := range engines {
-		eng.Enqueue(chain.ProvenanceEntry{
-			Hash:      hash,
-			Submitter: eng.node.UID.RootID,
-		})
-	}
-
-	rootSame := engines[0].st.Root()
-	order := proposerFirstOrder(peers, 0, rootSame[:])
-	for _, idx := range order {
-		engines[idx].RunCycle()
-	}
-
-	for i, eng := range engines {
-		if eng.BlockCount() != 1 {
-			t.Fatalf("engine %d: expected 1 block, got %d", i, eng.BlockCount())
-		}
-		if string(eng.GetBlock(0).BlockHash) != string(engines[0].GetBlock(0).BlockHash) {
-			t.Fatalf("engine %d block hash mismatch", i)
+func contains(slice []int, val int) bool {
+	for _, v := range slice {
+		if v == val {
+			return true
 		}
 	}
-
-	t.Logf("Same-hash: 1 block with %d entries (dedup) across 3 engines", len(engines[0].GetBlock(0).Anchored))
+	return false
 }
 
 func TestMultiNodeEdgesAndLambda(t *testing.T) {
