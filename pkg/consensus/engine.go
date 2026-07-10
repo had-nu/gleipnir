@@ -37,6 +37,8 @@ type Engine struct {
 	subChains *SubChainManager
 	apiLimits APILimits
 	stopped   bool
+
+	storage EngineStorage // optional persistence
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -104,6 +106,62 @@ func (e *Engine) Stop() {
 	e.stopped = true
 	e.mu.Unlock()
 	e.cancel()
+	// Persist state on stop
+	if e.storage != nil {
+		e.persist()
+	}
+}
+
+// SetStorage sets the persistence backend for the engine.
+func (e *Engine) SetStorage(s EngineStorage) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.storage = s
+	// Load existing state if available
+	if s != nil {
+		e.loadPersisted()
+	}
+}
+
+// persist saves engine state to storage.
+func (e *Engine) persist() {
+	if e.storage == nil {
+		return
+	}
+	ctx := context.Background()
+	_ = e.storage.SaveState(ctx, e.state)
+	_ = e.storage.SavePending(ctx, e.pending)
+	_ = e.storage.SaveSMT(ctx, e.st)
+	// Save anchored proofs
+	for h, p := range e.anchored {
+		_ = e.storage.SaveAnchored(ctx, h, p)
+	}
+	// Save blocks
+	for _, b := range e.blocks {
+		_ = e.storage.SaveBlock(ctx, b)
+	}
+}
+
+// loadPersisted loads engine state from storage.
+func (e *Engine) loadPersisted() {
+	ctx := context.Background()
+	if st, ok, _ := e.storage.LoadState(ctx); ok {
+		e.state = st
+	}
+	if pending, err := e.storage.LoadPending(ctx); err == nil {
+		e.pending = pending
+	}
+	if anchored, err := e.storage.LoadAnchored(ctx); err == nil {
+		e.anchored = anchored
+	}
+	if blocks, err := e.storage.LoadBlocks(ctx); err == nil {
+		e.blocks = blocks
+	}
+	if smtTree, err := e.storage.LoadSMT(ctx); err == nil && smtTree != nil {
+		if t, ok := smtTree.(*smt.SparseMerkleTree); ok {
+			e.st = t
+		}
+	}
 }
 
 func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
@@ -156,11 +214,23 @@ func (e *Engine) GetHealth() chain.NetworkHealth {
 	}
 }
 
+func (e *Engine) PendingCount() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.pending)
+}
+
 func (e *Engine) GetStateRoot() []byte {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	r := e.st.Root()
 	return r[:]
+}
+
+func (e *Engine) Cycle() uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.state.Cycle
 }
 
 func (e *Engine) GetBlock(index uint64) *chain.Block {
@@ -378,6 +448,11 @@ func (e *Engine) RunCycle() {
 	}
 	e.state = next
 	e.blocks = append(e.blocks, block)
+
+	// Persist state after successful block append
+	if e.storage != nil {
+		e.persist()
+	}
 
 	// Remove committed entries from gossip pool
 	if e.gossip != nil && amProposer {
