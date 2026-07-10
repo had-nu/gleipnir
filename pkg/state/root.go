@@ -13,7 +13,7 @@ type networkStateForRoot struct {
 	Lambda1  float64              `cbor:"3,keyasint"`
 }
 
-func ComputeStateRoot(s NetworkState) []byte {
+func ComputeSupervisionRoot(s NetworkState) []byte {
 	partial := networkStateForRoot{
 		Cycle:   s.Cycle,
 		Nodes:   s.Nodes,

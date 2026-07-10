@@ -12,7 +12,7 @@ var (
 )
 
 func Apply(s NetworkState, prevRoot []byte, heartbeats []string, cfg Config) (NetworkState, error) {
-	if s.Cycle > 0 && !bytes.Equal(prevRoot, s.StateRoot) {
+	if s.Cycle > 0 && !bytes.Equal(prevRoot, s.SupervisionRoot) {
 		return NetworkState{}, ErrChainBroken
 	}
 
@@ -58,7 +58,7 @@ func Apply(s NetworkState, prevRoot []byte, heartbeats []string, cfg Config) (Ne
 		Graph:   newGraph,
 		Lambda1: lambda1,
 	}
-	next.StateRoot = ComputeStateRoot(next)
+	next.SupervisionRoot = ComputeSupervisionRoot(next)
 
 	return next, nil
 }

@@ -1,10 +1,14 @@
 package consensus
 
 import (
+	"bytes"
 	"crypto/rand"
 	"testing"
+	"time"
 
+	"github.com/had-nu/gleipnir/pkg/chain"
 	"github.com/had-nu/gleipnir/pkg/identity"
+	"github.com/had-nu/gleipnir/pkg/state"
 )
 
 func testPeer(id string) Peer {
@@ -116,4 +120,195 @@ func testEq(a, b []byte) bool {
 		}
 	}
 	return true
+}
+
+// --- P1: cycle advancement tests ---
+
+func newTestEngine() *Engine {
+	uid := identity.NewUIDZero("test-self", true)
+	node := Node{UID: *uid, Addr: "self"}
+	eng := NewEngine(node, time.Hour)
+	uidHex := uid.ID()
+	eng.state.Nodes[uidHex] = state.NodeState{
+		UID:    uid.RootID,
+		Status: 1.0,
+	}
+	return eng
+}
+
+func addEdgesForNodes(eng *Engine) {
+	uids := make([]string, 0, len(eng.state.Nodes))
+	for uid := range eng.state.Nodes {
+		uids = append(uids, uid)
+	}
+	for i := 0; i < len(uids); i++ {
+		for j := i + 1; j < len(uids); j++ {
+			eng.state.Graph.Edges = append(eng.state.Graph.Edges, state.Edge{
+				From:   uids[i],
+				To:     uids[j],
+				Weight: 1.0,
+			})
+		}
+	}
+}
+
+func addPending(eng *Engine) {
+	eng.pending = append(eng.pending, chain.ProvenanceEntry{
+		Hash: [32]byte{1},
+	})
+}
+
+func TestCycleAdvancesOnFragmentation(t *testing.T) {
+	eng := newTestEngine()
+	addEdgesForNodes(eng)        // not needed for fragmentation but keep consistent
+	eng.cfg.MinLambda1 = 9999    // impossible to reach → always fragmented
+	addPending(eng)
+
+	prevCycle := eng.state.Cycle
+	prevBlocks := len(eng.blocks)
+
+	eng.RunCycle()
+
+	if eng.state.Cycle != prevCycle+1 {
+		t.Fatalf("expected cycle %d, got %d (must advance on fragmentation)", prevCycle+1, eng.state.Cycle)
+	}
+	if len(eng.blocks) != prevBlocks {
+		t.Fatalf("expected %d blocks (no append on fragmentation), got %d", prevBlocks, len(eng.blocks))
+	}
+
+	eng.RunCycle()
+	if eng.state.Cycle != prevCycle+2 {
+		t.Fatalf("expected cycle %d after second call, got %d", prevCycle+2, eng.state.Cycle)
+	}
+	if len(eng.blocks) != prevBlocks {
+		t.Fatalf("blocks should not advance across repeated fragmentation")
+	}
+}
+
+func TestRunCycleAlwaysAdvancesCycle(t *testing.T) {
+	tests := []struct {
+		name       string
+		setup      func(eng *Engine)
+		wantBlock  bool
+		desc       string
+	}{
+		{
+			name: "no pending entries",
+			setup: func(eng *Engine) {
+			},
+			wantBlock: false,
+			desc:      "early return with cycle increment when pending is empty",
+		},
+		{
+			name: "inactive proposer",
+			setup: func(eng *Engine) {
+				addPending(eng)
+				uidHex := eng.node.UID.ID()
+				eng.state.Nodes[uidHex] = state.NodeState{
+					UID:    eng.node.UID.RootID,
+					Status: 0,
+				}
+			},
+			wantBlock: false,
+			desc:      "early return with cycle increment when proposer status <= 0",
+		},
+		{
+			name: "fragmentation error",
+			setup: func(eng *Engine) {
+				addPending(eng)
+				uidHex := eng.node.UID.ID()
+				eng.state.Nodes[uidHex] = state.NodeState{
+					UID:    eng.node.UID.RootID,
+					Status: 1.0,
+				}
+				eng.cfg.MinLambda1 = 9999
+			},
+			wantBlock: false,
+			desc:      "early return with cycle increment on Apply fragmentation error",
+		},
+		{
+			name: "happy path",
+			setup: func(eng *Engine) {
+				addPending(eng)
+				uidHex := eng.node.UID.ID()
+				eng.state.Nodes[uidHex] = state.NodeState{
+					UID:    eng.node.UID.RootID,
+					Status: 1.0,
+				}
+				// Add second peer so Laplacian has ≥2 nodes
+				peer2 := testPeer("peer2")
+				eng.state.Nodes[peer2.UID.ID()] = state.NodeState{
+					UID:    peer2.UID.RootID,
+					Status: 1.0,
+				}
+				addEdgesForNodes(eng)
+			},
+			wantBlock: true,
+			desc:      "block appended on successful Apply",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := newTestEngine()
+			tt.setup(eng)
+
+			prevCycle := eng.state.Cycle
+			prevBlocks := len(eng.blocks)
+
+			eng.RunCycle()
+
+			if eng.state.Cycle != prevCycle+1 {
+				t.Fatalf("expected cycle %d, got %d: %s", prevCycle+1, eng.state.Cycle, tt.desc)
+			}
+
+			gotBlock := len(eng.blocks) > prevBlocks
+			if gotBlock != tt.wantBlock {
+				t.Fatalf("wantBlock=%v, got block append=%v: %s", tt.wantBlock, gotBlock, tt.desc)
+			}
+
+			if tt.wantBlock && len(eng.blocks) > 0 {
+				last := eng.blocks[len(eng.blocks)-1]
+				if !bytes.Equal(last.Proposer, eng.node.UID.RootID) {
+					t.Errorf("block proposer mismatch: %s", tt.desc)
+				}
+			}
+		})
+	}
+}
+
+// --- P2: single-node run-cycle test ---
+
+func TestSingleNodeRunCycle(t *testing.T) {
+	eng := newTestEngine()
+	addPending(eng)
+	uidHex := eng.node.UID.ID()
+	eng.state.Nodes[uidHex] = state.NodeState{
+		UID:    eng.node.UID.RootID,
+		Status: 1.0,
+	}
+	// Add a second node so Laplacian is non-trivial (λ₁ > MinLambda1)
+	peer2 := testPeer("peer2")
+	eng.state.Nodes[peer2.UID.ID()] = state.NodeState{
+		UID:    peer2.UID.RootID,
+		Status: 1.0,
+	}
+	addEdgesForNodes(eng)
+
+	blocksBefore := len(eng.blocks)
+	eng.RunCycle()
+
+	if len(eng.blocks) != blocksBefore+1 {
+		t.Fatalf("expected exactly one block appended, got %d blocks", len(eng.blocks))
+	}
+
+	last := eng.blocks[len(eng.blocks)-1]
+	if len(last.Sigs[0]) == 0 {
+		t.Error("Sigs[0] must be populated (single signature)")
+	}
+	for i := 1; i < 3; i++ {
+		if len(last.Sigs[i]) != 0 {
+			t.Errorf("Sigs[%d] must be empty in single-node mode, got %d bytes", i, len(last.Sigs[i]))
+		}
+	}
 }

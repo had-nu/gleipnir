@@ -73,6 +73,10 @@ provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
           pipeline-sim               Libp2p (future)
 ```
 
+## Current status
+
+`RunCycle()` operates in **single-node mode** — the proposer is always the local node. `SelectTriad()` and `VerifyQuorum()` are implemented and tested but not yet wired into the live cycle loop (see [issue #5](https://github.com/had-nu/gleipnir/issues/5)). What you get today is an SMT-anchored, Dilithium3-signed single-signer log, not a 3-signature quorum.
+
 ## Stack
 
 | Component | Technology |

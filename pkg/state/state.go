@@ -8,7 +8,7 @@ type NetworkState struct {
 	Nodes    map[string]NodeState `cbor:"1,keyasint"`
 	Graph    ReputationGraph      `cbor:"2,keyasint"`
 	Lambda1  float64              `cbor:"3,keyasint"`
-	StateRoot []byte              `cbor:"4,keyasint"`
+	SupervisionRoot []byte       `cbor:"4,keyasint"`
 }
 
 type NodeState struct {

@@ -21,10 +21,10 @@ func TestStateSerialization(t *testing.T) {
 		},
 	}
 
-	root1 := ComputeStateRoot(s)
-	s.StateRoot = root1
+	root1 := ComputeSupervisionRoot(s)
+	s.SupervisionRoot = root1
 
-	root2 := ComputeStateRoot(s)
+	root2 := ComputeSupervisionRoot(s)
 	if !bytes.Equal(root1, root2) {
 		t.Errorf("StateRoot calculation is not deterministic")
 	}
@@ -46,10 +46,10 @@ func TestApplyWithHeartbeat(t *testing.T) {
 			},
 		},
 	}
-	s0.StateRoot = ComputeStateRoot(s0)
+	s0.SupervisionRoot = ComputeSupervisionRoot(s0)
 
 	heartbeats := []string{"aa", "bb"}
-	s1, err := Apply(s0, s0.StateRoot, heartbeats, DefaultConfig)
+	s1, err := Apply(s0, s0.SupervisionRoot, heartbeats, DefaultConfig)
 	if err != nil {
 		t.Fatalf("Apply failed: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestApplyChainBroken(t *testing.T) {
 			Edges: []Edge{{From: "aa", To: "aa", Weight: 1.0}},
 		},
 	}
-	s0.StateRoot = ComputeStateRoot(s0)
+	s0.SupervisionRoot = ComputeSupervisionRoot(s0)
 
 	_, err := Apply(s0, []byte("wrong-prev-root"), nil, DefaultConfig)
 	if err != ErrChainBroken {
@@ -109,7 +109,7 @@ func TestApplyChainBrokenNilPrevRoot(t *testing.T) {
 			},
 		},
 	}
-	s0.StateRoot = ComputeStateRoot(s0)
+	s0.SupervisionRoot = ComputeSupervisionRoot(s0)
 
 	s1, err := Apply(s0, nil, []string{"aa"}, DefaultConfig)
 	if err != nil {
@@ -134,9 +134,9 @@ func TestApplyNetworkFragmented(t *testing.T) {
 			},
 		},
 	}
-	s0.StateRoot = ComputeStateRoot(s0) // disconnected: a1-b1, x1 isolated → λ₁ = 0
+	s0.SupervisionRoot = ComputeSupervisionRoot(s0) // disconnected: a1-b1, x1 isolated → λ₁ = 0
 
-	_, err := Apply(s0, s0.StateRoot, []string{"a1", "b1", "x1"}, DefaultConfig)
+	_, err := Apply(s0, s0.SupervisionRoot, []string{"a1", "b1", "x1"}, DefaultConfig)
 	if err != ErrNetworkFragmented {
 		t.Fatalf("expected ErrNetworkFragmented for disconnected graph, got %v", err)
 	}

@@ -80,6 +80,20 @@ Gleipnir is designed to work in two modes:
 - **Embedded**: `consensus.NewEngine(node, interval)` — runs inside your process. Import `github.com/had-nu/gleipnir/pkg/consensus`. No gRPC needed.
 - **Sidecar**: `provenanced` daemon with gRPC API. Connect via `client.New()` for remote anchoring.
 
+### Current status: single-node mode
+
+`RunCycle()` currently operates in **single-node mode only**. The proposer is always the local node because `SelectProposer()` is called against a one-element peer list (`engine.go:146`). `SelectTriad()` and `VerifyQuorum()` are implemented and unit-tested but **not wired into the live cycle loop** — see issue [#5](https://github.com/had-nu/gleipnir/issues/5).
+
+What you get today:
+- SMT-anchored, Dilithium3-signed **single-signer log** with 1-of-3 signature slots populated
+- No multi-node quorum (3/3 signatures)
+- No remote peer discovery (gRPC reachable, but no libp2p peer exchange)
+
+What the multi-node design specifies (future):
+- 3-signature Dilithium3 quorum per block
+- Hash-based leader election across N validators
+- Triad formation and gossip
+
 ---
 
 ## Consensus cycle
@@ -118,12 +132,14 @@ Exported as `Engine.RunCycle()` for manual triggering. The ticker runs `RunCycle
 Engine.Start()
   └→ cycleLoop()                     [engine.go:116]
        └→ RunCycle()                 [engine.go:130]
-            ├→ SelectProposer()      [triad.go:11]
+            ├→ SelectProposer()      [triad.go:11]  † single-node only
             ├→ st.Insert()           [smt.go]
             ├→ st.Prove()            [smt.go]
             ├→ identity.SignDilithium() [dilithium.go]
             └→ state.Apply()         [apply.go]
 ```
+
+† `SelectProposer()` is called with a one-element peer list. `SelectTriad()` and `VerifyQuorum()` are not invoked by the current cycle loop. See issue [#5](https://github.com/had-nu/gleipnir/issues/5).
 
 ---
 
@@ -171,13 +187,13 @@ Internal storage uses two maps: `data map[[32]byte][]byte` for leaves and `cache
 
 ### `pkg/state/` — Network state and supervision
 
-- `NetworkState` — cycle counter, NodeState map, ReputationGraph, StateRoot, Lambda1.
+- `NetworkState` — cycle counter, NodeState map, ReputationGraph, SupervisionRoot, Lambda1.
 - `NodeState` — heartbeat, latency, status.
 - `ReputationGraph` — adjacency matrix (dense `mat.SymDense`).
 - `Apply(state, prevRoot, heartbeats, cfg)` → compute next state, Laplacian λ₁.
 - `ComputeLambda1(matrix)` → smallest eigenvalue of the Laplacian.
 - `BuildLaplacian(graph)` → graph Laplacian matrix from adjacency.
-- `ComputeStateRoot(heartbeats, lambda1)` → CBOR → Blake3 root.
+- `ComputeSupervisionRoot(s)` → CBOR+Blake3 root of `{Cycle, Nodes, Graph, Lambda1}`.
 
 ### `pkg/server/` — gRPC API
 
@@ -281,7 +297,7 @@ func (d *CustomDriver) Close() error
 
 ### 2. Embedded engine
 
-Import and use without gRPC:
+Import and use without gRPC (single-node mode — see [issue #5](https://github.com/had-nu/gleipnir/issues/5)):
 
 ```go
 import "github.com/had-nu/gleipnir/pkg/consensus"
@@ -381,4 +397,5 @@ Tags follow `vMAJOR.MINOR.PATCH`. Breaking changes increment major. Pre-release 
 | Leader election is a deterministic hash race, not a true VRF | Predictable proposer, grinding attack surface | [#1](https://github.com/had-nu/gleipnir/issues/1) | Open |
 | Kyber1024 not yet used for its intended purpose (KEM) | No encrypted peer channels | [#2](https://github.com/had-nu/gleipnir/issues/2) | Open |
 | 3/3 quorum tolerates zero faults (n=3, f=0) | Single offline proposer stalls the cycle (mitigated by view-change skip) | [#3](https://github.com/had-nu/gleipnir/issues/3) | Open |
+| Multi-node triad/quorum path implemented but not wired into RunCycle | Quorum guarantees advertised in architecture overview do not currently apply to live cycles | [#5](https://github.com/had-nu/gleipnir/issues/5) | Open |
 | Eigendecomposition O(n³) per λ₁ recomputation | Scales poorly above 100 peers (mitigated by LambdaInterval) | [#4](https://github.com/had-nu/gleipnir/issues/4) | Open |

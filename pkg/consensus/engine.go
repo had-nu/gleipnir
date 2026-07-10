@@ -143,6 +143,10 @@ func (e *Engine) RunCycle() {
 	e.pending = e.pending[:0]
 
 	rootArr := e.st.Root()
+	// Single-node: proposer always this node.
+	// SelectTriad and VerifyQuorum are implemented (triad.go, quorum.go)
+	// but not wired into RunCycle yet. Multi-node support is tracked
+	// at https://github.com/had-nu/gleipnir/issues/5
 	proposer, _ := SelectProposer(
 		[]Peer{{UID: e.node.UID, Addr: e.node.Addr, Alive: true}},
 		cycle,
@@ -199,9 +203,11 @@ func (e *Engine) RunCycle() {
 	block.BlockHash = blockHash
 	block.Sigs[0] = identity.SignDilithium(e.node.UID.SecretKey, blockHash)
 
-	next, err := state.Apply(e.state, e.state.StateRoot, []string{hex.EncodeToString(e.node.UID.RootID)}, e.cfg)
+	next, err := state.Apply(e.state, e.state.SupervisionRoot, []string{hex.EncodeToString(e.node.UID.RootID)}, e.cfg)
 	if err != nil {
-		log.Printf("IPC cycle %d: state apply error: %v", cycle, err)
+		e.state.Cycle++
+		log.Printf("IPC cycle %d: state apply error: %v (λ₁=%.4f, min=%.4f, block not appended)",
+			cycle, err, e.state.Lambda1, e.cfg.MinLambda1)
 		return
 	}
 	e.state = next
