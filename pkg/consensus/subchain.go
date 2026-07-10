@@ -137,7 +137,9 @@ func (m *SubChainManager) Anchor(id chain.SubChainID) error {
 		Timestamp: now,
 		Label:     "subchain:anchor",
 	}
-	m.engine.Enqueue(entry)
+	if err := m.engine.Enqueue(entry); err != nil {
+		log.Printf("Sub-chain %s anchor enqueue failed: %v", id.String(), err)
+	}
 
 	log.Printf("Sub-chain %s anchored at height %d root=%x",
 		id.String(), anchorHeight, stateRoot[:8])

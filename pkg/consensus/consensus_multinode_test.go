@@ -49,7 +49,7 @@ func TestThreeNodeConsensus(t *testing.T) {
 	// Cycle 0: submit and commit 3 entries (unique hashes per engine)
 	for i, eng := range engines {
 		eng.Enqueue(chain.ProvenanceEntry{
-			Hash:      [32]byte{byte(i)},
+			Hash:      [32]byte{byte(i + 1)},
 			Submitter: peers[i].UID.RootID,
 		})
 	}
@@ -80,7 +80,7 @@ func TestThreeNodeConsensus(t *testing.T) {
 	// Cycle 1: submit 3 more entries
 	for i, eng := range engines {
 		eng.Enqueue(chain.ProvenanceEntry{
-			Hash:      [32]byte{10 + byte(i)},
+			Hash:      [32]byte{10 + byte(i + 1)},
 			Submitter: peers[i].UID.RootID,
 		})
 	}
@@ -107,13 +107,13 @@ func TestThreeNodeConsensus(t *testing.T) {
 	// Verify all hashes anchored
 	for _, eng := range engines {
 		for i := 0; i < 2; i++ {
-			proof, ok := eng.LookupHash([32]byte{byte(i)})
+			proof, ok := eng.LookupHash([32]byte{byte(i + 1)})
 			if !ok || !proof.Found {
-				t.Fatalf("missing hash %d", i)
+				t.Fatalf("missing hash %d", i+1)
 			}
-			proof, ok = eng.LookupHash([32]byte{10 + byte(i)})
+			proof, ok = eng.LookupHash([32]byte{10 + byte(i + 1)})
 			if !ok || !proof.Found {
-				t.Fatalf("missing hash %d", 10+i)
+				t.Fatalf("missing hash %d", 10+i+1)
 			}
 		}
 	}
@@ -168,7 +168,7 @@ func TestMultiNodeEdgesAndLambda(t *testing.T) {
 		t.Fatalf("expected 3 peers, got %d", health.TotalPeers)
 	}
 
-	eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{1}})
+	eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{1}, Submitter: peers[0].UID.RootID})
 
 	rootLambda := eng.st.Root()
 	order := proposerFirstOrder(peers, 0, rootLambda[:])

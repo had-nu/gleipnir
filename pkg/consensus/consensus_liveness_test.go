@@ -37,7 +37,7 @@ func TestLivelockRegressionFragmentationRecovery(t *testing.T) {
 
 	// Run 10 cycles — none should produce a block
 	for i := 0; i < 10; i++ {
-		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(i)}})
+		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(i + 1)}, Submitter: uid.RootID})
 		eng.RunCycle()
 	}
 
@@ -58,7 +58,7 @@ func TestLivelockRegressionFragmentationRecovery(t *testing.T) {
 
 	// Run more cycles — blocks should resume
 	for i := 0; i < 5; i++ {
-		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(100 + i)}})
+		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(100 + i)}, Submitter: uid.RootID})
 		eng.RunCycle()
 	}
 
@@ -135,7 +135,7 @@ func TestCrashMidCycleRecovery(t *testing.T) {
 	recovered := NewEngine(Node{UID: *uid, Addr: "crash-recovered"}, time.Hour)
 	recovered.st = eng.st // Reuse the SMT with the orphaned entry
 
-	recovered.Enqueue(chain.ProvenanceEntry{Hash: targetHash, Label: "recovered"})
+	recovered.Enqueue(chain.ProvenanceEntry{Hash: targetHash, Submitter: uid.RootID, Label: "recovered"})
 	recovered.RunCycle()
 
 	recovered.mu.Lock()
@@ -169,7 +169,7 @@ func TestProofTimeConstantWrtChainLength(t *testing.T) {
 
 	// Build 100 blocks
 	for i := 0; i < 100; i++ {
-		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(i)}})
+		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(i + 1)}, Submitter: []byte("t")})
 		eng.RunCycle()
 	}
 
@@ -183,10 +183,10 @@ func TestProofTimeConstantWrtChainLength(t *testing.T) {
 
 	// Verify specific hash lookup
 	eng.mu.Lock()
-	proof, ok := eng.anchored[[32]byte{99}]
+	proof, ok := eng.anchored[[32]byte{100}]
 	eng.mu.Unlock()
 	if !ok || !proof.Found {
-		t.Fatal("hash 99 should be anchored")
+		t.Fatal("hash 100 should be anchored")
 	}
 	lookupOk := ok
 
@@ -258,7 +258,7 @@ func TestParallelSubmissions(t *testing.T) {
 		go func(workerID int) {
 			defer wg.Done()
 			for i := 0; i < opsPerWorker; i++ {
-				hash := [32]byte{byte(workerID), byte(i)}
+				hash := [32]byte{byte(workerID + 1), byte(i + 1)}
 				if _, err := eng.Submit(ctx, hash, uid.RootID, fmt.Sprintf("w%d-%d", workerID, i)); err != nil {
 					t.Errorf("worker %d submit error: %v", workerID, err)
 					return

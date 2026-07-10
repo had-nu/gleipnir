@@ -24,6 +24,7 @@ type UIDZeroSoulbound struct {
 	FinalDigest         []byte   `cbor:"14,keyasint"`
 	PublicKey           []byte   `cbor:"15,keyasint"`
 	SecretKey           []byte   `cbor:"16,keyasint,omitempty"`
+	ContractHash        []byte   `cbor:"17,keyasint,omitempty"`
 }
 
 func NewUIDZero(randSeed string, simulated bool) *UIDZeroSoulbound {

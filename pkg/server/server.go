@@ -49,7 +49,12 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 		Timestamp: req.Timestamp,
 		Label:     req.Label,
 	}
-	s.engine.Enqueue(entry)
+	if err := s.engine.Enqueue(entry); err != nil {
+		return &pb.SubmitResponse{
+			Accepted: false,
+			Status:   err.Error(),
+		}, nil
+	}
 
 	return &pb.SubmitResponse{
 		Accepted: true,

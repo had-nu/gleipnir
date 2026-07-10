@@ -60,36 +60,39 @@ func TestMalformedSubmissions(t *testing.T) {
 	defer eng.Stop()
 	ctx := context.Background()
 
-	t.Run("nil submitter", func(t *testing.T) {
+	t.Run("nil submitter rejected", func(t *testing.T) {
 		var h [32]byte
 		h[0] = 1
-		ticket, err := eng.Submit(ctx, h, nil, "nil-submitter")
-		if err != nil {
-			t.Fatalf("Submit with nil submitter should not error: %v", err)
-		}
-		if ticket == nil || ticket.Status != "pending" {
-			t.Fatalf("unexpected ticket: %+v", ticket)
+		_, err := eng.Submit(ctx, h, nil, "nil-submitter")
+		if err != ErrInvalidSubmitter {
+			t.Fatalf("expected ErrInvalidSubmitter, got %v", err)
 		}
 	})
 
-	t.Run("oversized label", func(t *testing.T) {
+	t.Run("oversized label rejected", func(t *testing.T) {
 		var h [32]byte
 		h[0] = 2
 		big := string(make([]byte, 1<<20)) // 1 MB label
-		ticket, err := eng.Submit(ctx, h, uid.RootID, big)
-		if err != nil {
-			t.Fatalf("Submit with oversized label should not error: %v", err)
-		}
-		if ticket == nil || ticket.Status != "pending" {
-			t.Fatalf("unexpected ticket: %+v", ticket)
+		_, err := eng.Submit(ctx, h, uid.RootID, big)
+		if err != ErrLabelTooLong {
+			t.Fatalf("expected ErrLabelTooLong, got %v", err)
 		}
 	})
 
-	t.Run("zero hash", func(t *testing.T) {
+	t.Run("zero hash rejected", func(t *testing.T) {
 		var zero [32]byte
-		ticket, err := eng.Submit(ctx, zero, uid.RootID, "zero-hash")
+		_, err := eng.Submit(ctx, zero, uid.RootID, "zero-hash")
+		if err != ErrInvalidHash {
+			t.Fatalf("expected ErrInvalidHash, got %v", err)
+		}
+	})
+
+	t.Run("valid submission accepted", func(t *testing.T) {
+		var h [32]byte
+		h[0] = 3
+		ticket, err := eng.Submit(ctx, h, uid.RootID, "valid")
 		if err != nil {
-			t.Fatalf("Submit with zero hash should not error: %v", err)
+			t.Fatalf("valid submission should not error: %v", err)
 		}
 		if ticket == nil || ticket.Status != "pending" {
 			t.Fatalf("unexpected ticket: %+v", ticket)
@@ -129,17 +132,25 @@ func TestFuzzEnqueueEdgeCases(t *testing.T) {
 	eng := NewEngine(Node{UID: *uid, Addr: "fuzz-enqueue"}, time.Hour)
 	defer eng.Stop()
 
-	edges := []chain.ProvenanceEntry{
+	// Invalid entries are rejected; only valid ones are queued.
+	invalid := []chain.ProvenanceEntry{
 		{Hash: [32]byte{}, Submitter: nil, Label: ""},
 		{Hash: [32]byte{}, Submitter: []byte{}, Label: string(make([]byte, 1<<16))},
-		{Hash: [32]byte{255}, Submitter: []byte("ok"), Label: "normal"},
-		{Hash: [32]byte{1, 2, 3}, Submitter: make([]byte, 1<<20), Label: "big-submitter"},
+	}
+	for _, e := range invalid {
+		if err := eng.Enqueue(e); err == nil {
+			t.Fatalf("expected validation error for %+v", e)
+		}
 	}
 
-	for i, e := range edges {
-		eng.Enqueue(e)
-		t.Logf("Enqueue edge case %d: hash=%x submitter_len=%d label_len=%d",
-			i, e.Hash[:4], len(e.Submitter), len(e.Label))
+	valid := []chain.ProvenanceEntry{
+		{Hash: [32]byte{255}, Submitter: []byte("ok"), Label: "normal"},
+		{Hash: [32]byte{1, 2, 3}, Submitter: []byte("ok2"), Label: "big-submitter"},
+	}
+	for _, e := range valid {
+		if err := eng.Enqueue(e); err != nil {
+			t.Fatalf("valid entry rejected: %v", err)
+		}
 	}
 
 	// Run cycle — should not panic

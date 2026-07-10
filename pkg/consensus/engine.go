@@ -35,6 +35,8 @@ type Engine struct {
 	gossip    GossipChannel // nil for single-node mode
 	peers     []Peer        // all network peers (including self)
 	subChains *SubChainManager
+	apiLimits APILimits
+	stopped   bool
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -98,16 +100,32 @@ func (e *Engine) Start() {
 }
 
 func (e *Engine) Stop() {
+	e.mu.Lock()
+	e.stopped = true
+	e.mu.Unlock()
 	e.cancel()
 }
 
-func (e *Engine) Enqueue(entry chain.ProvenanceEntry) {
+func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	cfg := e.apiLimitsLocked()
+	if err := validateEntry(entry.Hash, entry.Submitter, entry.Label, cfg); err != nil {
+		return err
+	}
+	if len(e.pending) >= cfg.MaxTotalPending {
+		return ErrRateLimited
+	}
+	if e.countPendingBySubmitter(entry.Submitter) >= cfg.MaxPendingPerSubmitter {
+		return ErrRateLimited
+	}
+
 	e.pending = append(e.pending, entry)
 	if e.gossip != nil {
 		e.gossip.Publish(entry)
 	}
+	return nil
 }
 
 func (e *Engine) LookupHash(hash [32]byte) (*chain.AnchorProof, bool) {
@@ -175,6 +193,11 @@ func (e *Engine) cycleLoop() {
 }
 
 func (e *Engine) RunCycle() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("IPC cycle panic recovered: %v", r)
+		}
+	}()
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -416,6 +439,23 @@ func (e *Engine) ProveSMT(key []byte) ([][32]byte, error) {
 
 func (e *Engine) Submit(ctx context.Context, hash [32]byte, submitter []byte, label string) (*chain.Ticket, error) {
 	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.stopped {
+		return nil, ErrEngineStopped
+	}
+
+	cfg := e.apiLimitsLocked()
+	if err := validateEntry(hash, submitter, label, cfg); err != nil {
+		return nil, err
+	}
+	if len(e.pending) >= cfg.MaxTotalPending {
+		return nil, ErrRateLimited
+	}
+	if e.countPendingBySubmitter(submitter) >= cfg.MaxPendingPerSubmitter {
+		return nil, ErrRateLimited
+	}
+
 	e.pending = append(e.pending, chain.ProvenanceEntry{
 		Hash:      hash,
 		Submitter: submitter,
@@ -423,7 +463,6 @@ func (e *Engine) Submit(ctx context.Context, hash [32]byte, submitter []byte, la
 		Label:     label,
 	})
 	estimatedBlock := uint64(len(e.blocks))
-	e.mu.Unlock()
 	return &chain.Ticket{
 		Hash:       hash,
 		Status:     "pending",

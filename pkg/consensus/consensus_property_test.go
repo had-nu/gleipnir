@@ -96,7 +96,7 @@ func TestCrossRunDeterminismWithRace(t *testing.T) {
 		wg.Add(1)
 		go func(h byte) {
 			defer wg.Done()
-			eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{h}, Submitter: []byte("t"), Label: "r"})
+			eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{h + 1}, Submitter: []byte("t"), Label: "r"})
 		}(i)
 	}
 	wg.Wait()
@@ -128,7 +128,7 @@ func TestBlockChainTamperDetection(t *testing.T) {
 	const nBlocks = 50
 	for i := 0; i < nBlocks; i++ {
 		eng.Enqueue(chain.ProvenanceEntry{
-			Hash:      [32]byte{byte(i)},
+			Hash:      [32]byte{byte(i + 1)},
 			Submitter: []byte("t"),
 			Label:     strings.Repeat("x", 10),
 		})
