@@ -34,9 +34,14 @@ A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an i
 - **Multi-node consensus** — gossip-based block proposal + SMT root verification + co-signing across N peers
 - **Sub-chains** — per-service SMT + periodic anchoring + dual-Merkle cross-chain proofs
 - **Instant finality** — one cycle = one block = final; no forks, no rollbacks
-- **Sparse Merkle Tree state** — compact, verifiable state root via Blake3-based SMT (depth 256)
+- **Sparse Merkle Tree state** — compact, verifiable state root via Blake3-based SMT (depth configurable, default 256)
 - **Self-supervising network** — Laplacian diffusion monitors topology health from heartbeat latencies
 - **Zero token, zero mining, zero smart contracts** — pure consensus for provenance
+- **Peer discovery & real transport** — libp2p GossipSub + mDNS (see `pkg/transport/p2p`)
+- **Persistence** — BoltDB-backed state with auto-persist on `Stop()` and `RunCycle()` (see `pkg/storage`)
+- **Client validation** — exported `ValidateEntry`, `IsZeroHash`, machine-readable error codes (see `pkg/validation`)
+- **Bounded rate limiting** — sliding-window per-submitter with LRU eviction (see `pkg/consensus/ratelimit.go`)
+- **Contract-derived UID0** — deterministic identity bound to company contract hash (see `pkg/identity/contract.go`)
 
 ## How it works
 
@@ -86,6 +91,14 @@ provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
 
 `RunCycle()` supports **single-node** (`NewEngine`) and **multi-node** (`NewEngineWithPeers` + `GossipChannel`) modes. The multi-node path builds blocks via gossip, verifies SMT root replication, and collects Dilithium3 co-signatures. Sub-chains (`SubChainManager`) enable per-service anchoring with cross-chain proofs. Transport layer (`pkg/transport`) provides KEM-authenticated AEAD channels (Kyber1024 + ChaCha20-Poly1305).
 
+**Production hardening complete** (G1–G6):
+- **gRPC API**: protobuf init panic resolved; server tests pass (`pkg/server`)
+- **P2P transport**: libp2p GossipSub + mDNS discovery (`pkg/transport/p2p`)
+- **Persistence**: BoltDB-backed `EngineStorage` auto-loads on init, auto-saves on `Stop()` and `RunCycle()` (`pkg/storage`)
+- **Client validation**: `pkg/validation` exports `ValidateEntry`, `IsZeroHash`, `ValidationError` with codes
+- **Rate limiting**: sliding-window per-submitter with LRU eviction (no memory leaks) (`pkg/consensus/ratelimit.go`)
+- **SMT depth**: configurable via `state.Config.SMTDepth` (default 256), used by engine + sub-chains
+
 The submission API is hardened (`pkg/consensus/api.go`): `Enqueue` validates entries and enforces rate limits, `RunCycle` recovers from panics, and `Engine.Stop` halts intake cleanly. UID0 root identity can be derived deterministically from a company contract hash (`pkg/identity/contract.go`), giving verifiable "node speaks for contract X" binding.
 
 ## Stack
@@ -93,9 +106,11 @@ The submission API is hardened (`pkg/consensus/api.go`): `Enqueue` validates ent
 | Component | Technology |
 |-----------|------------|
 | Consensus | Hash-based leader election + Dilithium3 triad |
-| State     | Sparse Merkle Tree (Blake3, depth 256) |
-| Transport | Kyber1024 KEM + ChaCha20-Poly1305 AEAD |
+| State     | Sparse Merkle Tree (Blake3, depth configurable, default 256) |
+| Transport | Kyber1024 KEM + ChaCha20-Poly1305 AEAD (libp2p GossipSub + mDNS) |
 | Sub-chains | Per-service SMT + dual-Merkle cross-chain proofs |
-| Network   | gRPC (future: Libp2p) |
+| Network   | gRPC + Libp2p GossipSub |
 | Supervision | Laplacian λ₁ diffusion |
+| Persistence | BoltDB (embedded) |
+| Rate limiting | Sliding window + LRU eviction |
 | Language  | Go |

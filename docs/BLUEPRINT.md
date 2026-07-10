@@ -25,10 +25,12 @@ Immutable Provenance Chain (IPC) v1 reference implementation.
 ├── pkg/
 │   ├── chain/             # Protocol types (Block, Entry, AnchorProof, SubChain)
 │   ├── consensus/         # Hash-based leader election, triad, quorum, Engine, SubChainManager
-│   ├── identity/          # uID0 soulbound, Dilithium3, Kyber1024
-│   ├── smt/               # Sparse Merkle Tree (Blake3, depth 256)
+│   ├── identity/          # uID0 soulbound, Dilithium3, Kyber1024, contract-derived UID0
+│   ├── smt/               # Sparse Merkle Tree (Blake3, depth configurable)
 │   ├── state/             # NetworkState, Laplacian supervision
-│   ├── transport/         # KEM handshake + ChaCha20-Poly1305 secure channel
+│   ├── transport/         # KEM handshake + ChaCha20-Poly1305 secure channel, libp2p GossipSub
+│   ├── storage/           # BoltDB persistence (EngineStorage interface)
+│   ├── validation/        # Client-side submission validation + error codes
 │   └── server/            # gRPC server + generated protobuf
 ├── client/                # Go client library (gRPC wrapper)
 ├── spec/                  # Protocol specification
@@ -53,10 +55,12 @@ provectl (CLI)         pipeline-sim
                    ├──→ pkg/identity
                    ├──→ pkg/smt
                    ├──→ pkg/state
-                   └──→ pkg/transport
+                   ├──→ pkg/transport
+                   ├──→ pkg/storage
+                   └──→ pkg/validation
 ```
 
-**Rule**: code in `pkg/` never imports `cmd/` or `pkg/server/`. The core packages (`chain`, `consensus`, `identity`, `smt`, `state`, `transport`) have zero gRPC or CLI dependencies.
+**Rule**: code in `pkg/` never imports `cmd/` or `pkg/server/`. The core packages (`chain`, `consensus`, `identity`, `smt`, `state`, `transport`, `storage`, `validation`) have zero gRPC or CLI dependencies.
 
 ---
 
@@ -83,20 +87,36 @@ Gleipnir is designed to work in two modes:
 - **Embedded**: `consensus.NewEngine(node, interval)` — runs inside your process. Import `github.com/had-nu/gleipnir/pkg/consensus`. No gRPC needed.
 - **Sidecar**: `provenanced` daemon with gRPC API. Connect via `client.New()` for remote anchoring.
 
-### Current status: multi-node + sub-chains
+### Current status: F1–F6 + G1–G6 complete
 
-`RunCycle()` supports both **single-node** and **multi-node** modes via `NewEngine()` (no gossip) and `NewEngineWithPeers()` (gossip channel + peer list). Multi-node uses a `GossipChannel` abstraction (`MemoryBus` for testing, real transport in development). The proposer broadcasts the block to all peers; non-proposers read the proposal, verify the SMT root, and co-sign with Dilithium3. Triad co-signatures (3/3) are collected from gossip and embedded in the block.
-
-**Sub-chains** extend the model: each sub-chain maintains its own SMT and periodic anchoring into the parent chain via labelled `ProvenanceEntry` (`Label: "subchain:anchor"`). Cross-chain proofs verify inclusion in both the sub-chain SMT and the parent chain SMT.
+| Phase | Scope | Status |
+|-------|-------|--------|
+| **F1** | Multi-node gossip (`MemoryBus`), `NewEngineWithPeers`, proposer/verifier cycle | ✅ |
+| **F2** | Kyber1024 KEM (`pkg/identity/kyber.go`) | ✅ |
+| **F3** | `pkg/transport` SecureConn — Kyber handshake + ChaCha20-Poly1305 AEAD with random nonces, HKDF(sorted peer IDs) | ✅ |
+| **F4** | `SubChainManager` — per-service SMT + anchor lifecycle (`Register`, `Submit`, `Anchor`, `Prove`, `VerifyCrossChain`) | ✅ |
+| **F5** | API hardening — `pkg/consensus/api.go`: validation, rate limits, panic recovery, `Stop()`/`SetAPILimits()` | ✅ |
+| **F6** | Contract-derived UID0 — `pkg/identity/contract.go`: `ContractHash`, `NewUIDZeroFromContract` (DRBG-seeded Dilithium), `ContractOf` | ✅ |
+| **G1** | Protobuf init panic resolved — compatible versions pinned, files regenerated | ✅ |
+| **G2** | Peer discovery + real transport — `pkg/transport/p2p/gossip.go`: libp2p GossipSub + mDNS, bootstrap peers | ✅ |
+| **G3** | Persistence — `pkg/storage/`: BoltDB `EngineStorage`, `SetStorage()`, auto-persist on `Stop()`/`RunCycle()` | ✅ |
+| **G4** | Exported validation — `pkg/validation/`: `ValidateEntry`, `IsZeroHash`, error codes (`ValidationError`) | ✅ |
+| **G5** | Rate limiter fix — `pkg/consensus/ratelimit.go`: sliding window + LRU eviction (bounded memory) | ✅ |
+| **G6** | SMT depth configurable — `state.Config.SMTDepth` (default 256), used by engine + sub-chains | ✅ |
 
 What you get today:
-- **Multi-node consensus**: N-node gossip-based cycle with deterministic proposer selection, verified SMT root replication, and quorum signature collection
-- **Kyber1024 KEM**: key encapsulation for encrypted peer channels (functional, not yet wired into automatic peer discovery)
+- **Multi-node consensus**: N-node gossip-based cycle with deterministic proposer selection, verified SMT root replication, quorum signature collection
+- **Kyber1024 KEM**: key encapsulation for encrypted peer channels
 - **ChaCha20-Poly1305 secure transport**: AEAD-encrypted messages with random nonces, keyed via HKDF(Kyber1024 shared secret, sorted peer IDs)
 - **Sub-chain registry**: per-service SMT + anchor lifecycle via `SubChainManager` (`Register`, `Submit`, `Anchor`, `Prove`, `VerifyCrossChain`)
-- **Hardened submission API**: `Enqueue` validates entries (rejects zero hashes, empty submitters, oversized labels) and enforces rate limits (total pending + per-submitter caps); `RunCycle` recovers from panics; `Engine.Stop` halts submission cleanly (see `pkg/consensus/api.go`)
-- **Contract-derived UID0**: `NewUIDZeroFromContract(contractHash, nodeSalt, simulated)` derives a deterministic, reproducible UID0 root identity bound to a company's contract hash (DRBG-seeded Dilithium3 key), enabling verifiable "this node speaks for contract X" proofs (`pkg/identity/contract.go`)
-- No remote peer discovery (gRPC reachable, but no libp2p peer exchange)
+- **Hardened submission API**: `Enqueue` validates entries (rejects zero hashes, empty submitters, oversized labels) and enforces rate limits (total pending + per-submitter caps); `RunCycle` recovers from panics; `Engine.Stop` halts intake cleanly
+- **Contract-derived UID0**: `NewUIDZeroFromContract(contractHash, nodeSalt, simulated)` derives a deterministic, reproducible UID0 root identity bound to a company's contract hash (DRBG-seeded Dilithium3 key), enabling verifiable "this node speaks for contract X" proofs
+- **Peer discovery & real transport**: `pkg/transport/p2p` libp2p GossipSub implementation of `GossipChannel` with mDNS discovery and bootstrap peers
+- **Persistence**: BoltDB-backed `EngineStorage` interface; `SetStorage()` loads state on init, auto-persists on `Stop()` and after each `RunCycle()`
+- **Client validation**: `pkg/validation` exports `ValidateEntry`, `IsZeroHash`, and machine-readable error codes (`ValidationError` with `Code` field) for programmatic handling
+- **Bounded rate limiting**: sliding-window per-submitter limiter with LRU eviction (max 10k tracked submitters); no unbounded map growth
+
+No remote peer discovery (gRPC reachable, but no libp2p peer exchange in F1–F6 — implemented in G2).
 
 ---
 
