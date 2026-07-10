@@ -37,6 +37,10 @@ func NewSubChainManager(engine *Engine) *SubChainManager {
 	}
 }
 
+func (m *SubChainManager) newSMT() *smt.SparseMerkleTree {
+	return smt.New(m.engine.cfg.SMTDepth)
+}
+
 func (m *SubChainManager) Register(name string, owner []byte) (chain.SubChainID, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -51,7 +55,7 @@ func (m *SubChainManager) Register(name string, owner []byte) (chain.SubChainID,
 		return chain.SubChainID{}, ErrSubChainExists
 	}
 
-	st := smt.New(256)
+	st := m.newSMT()
 	genesis := st.Root()
 
 	m.chains[id] = &subChain{

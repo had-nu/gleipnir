@@ -38,7 +38,8 @@ type Engine struct {
 	apiLimits APILimits
 	stopped   bool
 
-	storage EngineStorage // optional persistence
+	storage    EngineStorage // optional persistence
+	rateLimiter *SubmitterLimiter // sliding-window rate limiter
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -77,7 +78,7 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		gossip:        gossip,
 		state:         state.NetworkState{Cycle: 0, Nodes: make(map[string]state.NodeState), Graph: state.ReputationGraph{}},
 		cfg:           state.DefaultConfig,
-		st:            smt.New(256),
+		st:            smt.New(state.DefaultConfig.SMTDepth),
 		blocks:        make([]chain.Block, 0),
 		pending:       make([]chain.ProvenanceEntry, 0),
 		anchored:      make(map[[32]byte]*chain.AnchorProof),
@@ -85,6 +86,7 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		ctx:           ctx,
 		cancel:        cancel,
 		nowFunc:       time.Now,
+		rateLimiter:   NewSubmitterLimiter(5000, time.Minute), // 5000 per minute default
 	}
 	eng.state.Nodes[uidHex] = state.NodeState{
 		UID:    node.UID.RootID,
@@ -175,7 +177,8 @@ func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
 	if len(e.pending) >= cfg.MaxTotalPending {
 		return ErrRateLimited
 	}
-	if e.countPendingBySubmitter(entry.Submitter) >= cfg.MaxPendingPerSubmitter {
+	// Use sliding-window rate limiter for per-submitter limit
+	if e.rateLimiter != nil && !e.rateLimiter.Allow(entry.Submitter) {
 		return ErrRateLimited
 	}
 
@@ -218,6 +221,16 @@ func (e *Engine) PendingCount() int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return len(e.pending)
+}
+
+func (e *Engine) countPendingBySubmitter(submitter []byte) int {
+	count := 0
+	for _, e := range e.pending {
+		if string(e.Submitter) == string(submitter) {
+			count++
+		}
+	}
+	return count
 }
 
 func (e *Engine) GetStateRoot() []byte {
@@ -527,7 +540,8 @@ func (e *Engine) Submit(ctx context.Context, hash [32]byte, submitter []byte, la
 	if len(e.pending) >= cfg.MaxTotalPending {
 		return nil, ErrRateLimited
 	}
-	if e.countPendingBySubmitter(submitter) >= cfg.MaxPendingPerSubmitter {
+	// Use sliding-window rate limiter for per-submitter limits
+	if e.rateLimiter != nil && !e.rateLimiter.Allow(submitter) {
 		return nil, ErrRateLimited
 	}
 
