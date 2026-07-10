@@ -48,7 +48,7 @@ func Apply(s NetworkState, prevRoot []byte, heartbeats []string, cfg Config) (Ne
 		lambda1 = ComputeLambda1(l)
 	}
 
-	if lambda1 < cfg.MinLambda1 {
+	if len(newNodes) >= 2 && lambda1 < cfg.MinLambda1 {
 		return NetworkState{}, ErrNetworkFragmented
 	}
 

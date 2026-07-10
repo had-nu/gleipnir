@@ -34,7 +34,8 @@ type Engine struct {
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Engine{
+	uidHex := node.UID.ID()
+	eng := &Engine{
 		node:          node,
 		state:         state.NetworkState{Cycle: 0, Nodes: make(map[string]state.NodeState), Graph: state.ReputationGraph{}},
 		cfg:           state.DefaultConfig,
@@ -46,6 +47,14 @@ func NewEngine(node Node, cycleInterval time.Duration) *Engine {
 		ctx:           ctx,
 		cancel:        cancel,
 	}
+	eng.state.Nodes[uidHex] = state.NodeState{
+		UID:    node.UID.RootID,
+		Status: 1.0,
+	}
+	eng.state.Graph.Edges = []state.Edge{
+		{From: uidHex, To: uidHex, Weight: 1.0},
+	}
+	return eng
 }
 
 func (e *Engine) Start() {

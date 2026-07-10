@@ -158,10 +158,18 @@ func addPending(eng *Engine) {
 	})
 }
 
+func addDisconnectedPeer(eng *Engine) {
+	peer2 := testPeer("disc-peer2")
+	eng.state.Nodes[peer2.UID.ID()] = state.NodeState{
+		UID:    peer2.UID.RootID,
+		Status: 1.0,
+	}
+}
+
 func TestCycleAdvancesOnFragmentation(t *testing.T) {
 	eng := newTestEngine()
-	addEdgesForNodes(eng)        // not needed for fragmentation but keep consistent
-	eng.cfg.MinLambda1 = 9999    // impossible to reach → always fragmented
+	addDisconnectedPeer(eng)     // 2 nodes, no edges between them → λ₁ = 0
+	eng.cfg.MinLambda1 = 0.5     // 0 < 0.5 → always fragmented
 	addPending(eng)
 
 	prevCycle := eng.state.Cycle
@@ -216,12 +224,8 @@ func TestRunCycleAlwaysAdvancesCycle(t *testing.T) {
 			name: "fragmentation error",
 			setup: func(eng *Engine) {
 				addPending(eng)
-				uidHex := eng.node.UID.ID()
-				eng.state.Nodes[uidHex] = state.NodeState{
-					UID:    eng.node.UID.RootID,
-					Status: 1.0,
-				}
-				eng.cfg.MinLambda1 = 9999
+				addDisconnectedPeer(eng) // 2 nodes, no edges
+				eng.cfg.MinLambda1 = 0.5
 			},
 			wantBlock: false,
 			desc:      "early return with cycle increment on Apply fragmentation error",
