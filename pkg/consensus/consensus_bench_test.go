@@ -21,7 +21,8 @@ func BenchmarkSelectProposer(b *testing.B) {
 			state := []byte("test-state-root")
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
-				SelectProposer(peers, uint64(i), state)
+				proofs := vrfProofsForPeers(peers, uint64(i), state)
+				SelectProposer(peers, uint64(i), state, proofs)
 			}
 		})
 	}

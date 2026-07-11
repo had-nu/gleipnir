@@ -229,37 +229,58 @@ func TestSignatureNonMalleability(t *testing.T) {
 func TestForgedSignatureRejection(t *testing.T) {
 	msg := []byte("test block hash")
 
-	pkA, skA, err := identity.GenerateDilithiumKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, skB, err := identity.GenerateDilithiumKey(rand.Reader)
-	if err != nil {
-		t.Fatal(err)
+	var pks [][]byte
+	var sks [][]byte
+	for i := 0; i < 3; i++ {
+		pk, sk, err := identity.GenerateDilithiumKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		pks = append(pks, pk)
+		sks = append(sks, sk)
 	}
 
-	sigA := identity.SignDilithium(skA, msg)
-	sigB := identity.SignDilithium(skB, msg)
+	var sigs [][]byte
+	for i := 0; i < 3; i++ {
+		sigs = append(sigs, identity.SignDilithium(sks[i], msg))
+	}
 
-	// Valid quorum with 3 A-sigs
+	// Valid quorum with 3 distinct validators
 	quorum := chain.DefaultQuorumConfig()
-	pks := make([][]byte, 3)
-	for i := range pks {
-		pks[i] = pkA
-	}
-	sigs := make([][]byte, 3)
-	for i := range sigs {
-		sigs[i] = sigA
-	}
-	err = VerifyQuorum(msg, sigs, pks, quorum)
+	err := VerifyQuorum(msg, sigs, pks, quorum)
 	if err != nil {
 		t.Fatalf("expected valid quorum to pass: %v", err)
 	}
 
-	// Forged: sig from key B replaces one A-sig
-	sigs[1] = sigB
-	err = VerifyQuorum(msg, sigs, pks, quorum)
+	// Forged: sig from a non-validator replaces one valid sig
+	pkD, skD, err := identity.GenerateDilithiumKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = pkD
+	sigD := identity.SignDilithium(skD, msg)
+	forged := make([][]byte, len(sigs))
+	copy(forged, sigs)
+	forged[1] = sigD
+	err = VerifyQuorum(msg, forged, pks, quorum)
 	if err == nil {
 		t.Fatal("expected forged signature (valid sig from wrong key) to be rejected")
+	}
+
+	// Duplicate-signature attack: one distinct signer duplicated 3x
+	dupSigs := make([][]byte, 3)
+	for i := range dupSigs {
+		dupSigs[i] = sigs[0]
+	}
+	err = VerifyQuorum(msg, dupSigs, pks, quorum)
+	if err == nil {
+		t.Fatal("expected duplicate-signature attack to be rejected (1 distinct signer < 3)")
+	}
+
+	// Duplicate below threshold: 1 distinct signer for 2-of-N should also fail
+	q2 := chain.QuorumConfig{TotalValidators: 3, RequiredSigs: 2}
+	err = VerifyQuorum(msg, dupSigs, pks, q2)
+	if err == nil {
+		t.Fatal("expected duplicate-signature attack to be rejected for 2-of-N quorum (1 distinct signer < 2)")
 	}
 }

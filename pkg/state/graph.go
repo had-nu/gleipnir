@@ -43,30 +43,3 @@ func BuildLaplacian(graph ReputationGraph, nodes map[string]NodeState) *mat.SymD
 
 	return l
 }
-
-func ComputeLambda1(l *mat.SymDense) float64 {
-	if l == nil {
-		return 0
-	}
-	n, _ := l.Dims()
-	if n < 2 {
-		return 0
-	}
-
-	var eig mat.EigenSym
-	if ok := eig.Factorize(l, true); !ok {
-		return 0
-	}
-
-	values := eig.Values(nil)
-	if len(values) < 2 {
-		return 0
-	}
-
-	lambda1 := values[1]
-	if lambda1 < 0 {
-		return 0
-	}
-
-	return lambda1
-}

@@ -21,17 +21,17 @@ Provenance data (hash anchors, document fingerprints, CI/CD attestations) is sca
 
 ## Solution
 
-A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a hash-selected triad of validators.
+A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a VRF-selected proposer and validated by a configurable threshold of validators.
 
 **Sub-chains** extend the model: every service (Wardex, anti-ransomware, etc.) gets its own SMT-anchored provenance chain, periodically checkpointed into the parent chain via cross-chain proofs.
 
 ## What it delivers
 
 - **Immutable hash chain** — every anchored hash is permanently recorded in a linear, signed chain of blocks
-- **Post-quantum signatures** — Dilithium3 3/3 quorum, no single point of compromise
+- **Post-quantum signatures** — Dilithium3 M-of-N quorum, configurable threshold
 - **Post-quantum KEM** — Kyber1024 key encapsulation for encrypted peer channels
-- **Hash-based leader election** — deterministic proposer selection via `min(sha256(peerUID || cycle || stateRoot))`
-- **Multi-node consensus** — gossip-based block proposal + SMT root verification + co-signing across N peers
+- **ECVRF leader election** — Ristretto255 VRF per RFC 9381, grinding-resistant, each proof verifiable
+- **Multi-node consensus** — gossip-based ECVRF proposer selection + SMT root verification + M-of-N co-signing
 - **Sub-chains** — per-service SMT + periodic anchoring + dual-Merkle cross-chain proofs
 - **Instant finality** — one cycle = one block = final; no forks, no rollbacks
 - **Sparse Merkle Tree state** — compact, verifiable state root via Blake3-based SMT (depth configurable, default 256)
@@ -45,10 +45,10 @@ A lightweight **3-of-3 Dilithium3-quorum** network that anchors hashes into an i
 
 ## How it works
 
-1. A **hash round** selects a proposer from the active validator set using `min(sha256(peerUID || cycle || stateRoot))`
+1. Each peer computes a **ECVRF proof** `sk.Prove(cycle || stateRoot)` using their Ristretto255 VRF key — proofs are gossiped, verified against each peer's VRF public key, and the peer with the lowest Gamma becomes proposer
 2. The proposer collects pending hashes via gossip, builds a block, inserts into the SMT, and broadcasts the proposal
 3. Non-proposer peers insert the same entries into their local SMT, verify the root matches, and co-sign with **Dilithium3**
-4. With **3/3 signatures**, the block is finalized and appended to the chain
+4. With an **M-of-N threshold** of signatures, the block is finalized and appended to the chain
 5. Service operators register **sub-chains** (one per service), submit entries, and periodically **anchor** the sub-chain state root into the parent chain
 6. Each validator gossips its heartbeat; the **Laplacian λ₁** eigenvalue of the latency matrix supervises network diffusion
 
@@ -89,9 +89,15 @@ provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
 
 ## Current status
 
-`RunCycle()` supports **single-node** (`NewEngine`) and **multi-node** (`NewEngineWithPeers` + `GossipChannel`) modes. The multi-node path builds blocks via gossip, verifies SMT root replication, and collects Dilithium3 co-signatures. Sub-chains (`SubChainManager`) enable per-service anchoring with cross-chain proofs. Transport layer (`pkg/transport`) provides KEM-authenticated AEAD channels (Kyber1024 + ChaCha20-Poly1305).
+`RunCycle()` supports **single-node** (`NewEngine`) and **multi-node** (`NewEngineWithPeers` + `GossipChannel`) modes. The multi-node path uses ECVRF proposer selection, builds blocks via gossip, verifies SMT root replication, and collects M-of-N Dilithium3 co-signatures. Sub-chains (`SubChainManager`) enable per-service anchoring with cross-chain proofs. Transport layer (`pkg/transport`) provides KEM-authenticated AEAD channels (Kyber1024 + ChaCha20-Poly1305).
 
-**Production hardening complete** (G1–G6):
+**Issues #1–4 resolved** (I1–I4):
+- **ECVRF leader election**: Ristretto255 VRF per RFC 9381 — each peer proves proposer selection with a verifiable, unpredictable cryptographic proof; grinding-resistant
+- **M-of-N BFT quorum**: configurable threshold (1/1 single-node, 3/3 or higher multi-node); duplicate-signature attack rejected (each distinct signer counted once)
+- **Kyber1024 KEM**: used in `pkg/transport/secure_conn.go` for encrypted peer channels
+- **Power iteration for λ₁**: shift-invert power iteration with Cholesky factorization; falls back to dense EigenSym for small matrices or non-convergence
+
+**Also complete** (G1–G6):
 - **gRPC API**: protobuf init panic resolved; server tests pass (`pkg/server`)
 - **P2P transport**: libp2p GossipSub + mDNS discovery (`pkg/transport/p2p`)
 - **Persistence**: BoltDB-backed `EngineStorage` auto-loads on init, auto-saves on `Stop()` and `RunCycle()` (`pkg/storage`)
@@ -105,7 +111,7 @@ The submission API is hardened (`pkg/consensus/api.go`): `Enqueue` validates ent
 
 | Component | Technology |
 |-----------|------------|
-| Consensus | Hash-based leader election + Dilithium3 triad |
+| Consensus | ECVRF leader election (Ristretto255, RFC 9381) + Dilithium3 M-of-N quorum |
 | State     | Sparse Merkle Tree (Blake3, depth configurable, default 256) |
 | Transport | Kyber1024 KEM + ChaCha20-Poly1305 AEAD (libp2p GossipSub + mDNS) |
 | Sub-chains | Per-service SMT + dual-Merkle cross-chain proofs |

@@ -20,7 +20,11 @@ func makePeersAndNodes(seeds ...string) ([]Peer, []Node) {
 }
 
 func proposerFirstOrder(peers []Peer, cycle uint64, root []byte) []int {
-	proposer, _ := SelectProposer(peers, cycle, root)
+	proofs := vrfProofsForPeers(peers, cycle, root)
+	proposer, _, err := SelectProposer(peers, cycle, root, proofs)
+	if err != nil {
+		return []int{}
+	}
 	proposerHex := proposer.UID.ID()
 	order := make([]int, 0, len(peers))
 	for i, p := range peers {
@@ -188,15 +192,22 @@ func TestDeterministicProposerAcrossPeers(t *testing.T) {
 
 	// All 3 engines must independently select the same proposer
 	rootDet := engines[0].st.Root()
-	proposer0, score0 := SelectProposer(peers, 0, rootDet[:])
+	proofs0 := vrfProofsForPeers(peers, 0, rootDet[:])
+	proposer0, proof0, err0 := SelectProposer(peers, 0, rootDet[:], proofs0)
+	if err0 != nil {
+		t.Fatalf("SelectProposer failed: %v", err0)
+	}
 	for i := 1; i < 3; i++ {
 		r := engines[i].st.Root()
-		p, s := SelectProposer(peers, 0, r[:])
+		p, pr, err := SelectProposer(peers, 0, r[:], vrfProofsForPeers(peers, 0, r[:]))
+		if err != nil {
+			t.Fatalf("SelectProposer failed for engine %d: %v", i, err)
+		}
 		if string(p.UID.RootID) != string(proposer0.UID.RootID) {
 			t.Fatalf("engine %d selected different proposer", i)
 		}
-		if string(s) != string(score0) {
-			t.Fatalf("engine %d computed different score", i)
+		if string(pr.Gamma) != string(proof0.Gamma) {
+			t.Fatalf("engine %d computed different VRF output", i)
 		}
 	}
 

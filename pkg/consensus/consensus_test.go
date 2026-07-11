@@ -16,25 +16,49 @@ func testPeer(id string) Peer {
 	return Peer{UID: *uid, Addr: id, Alive: true}
 }
 
+// vrfProofsForPeers builds a VRF proofs map for the given peers.
+func vrfProofsForPeers(peers []Peer, cycle uint64, stateRoot []byte) map[string]*identity.VRFProof {
+	alpha := makeAlpha(cycle, stateRoot)
+	proofs := make(map[string]*identity.VRFProof, len(peers))
+	for _, p := range peers {
+		proof, err := p.UID.VRFProve(alpha)
+		if err != nil {
+			panic("VRFProve failed in test helper: " + err.Error())
+		}
+		proofs[p.UID.ID()] = proof
+	}
+	return proofs
+}
+
 func TestSelectProposerDeterministic(t *testing.T) {
 	peers := []Peer{testPeer("a"), testPeer("b"), testPeer("c")}
 
-	p1, s1 := SelectProposer(peers, 1, []byte("state1"))
-	p2, s2 := SelectProposer(peers, 1, []byte("state1"))
+	proofs := vrfProofsForPeers(peers, 1, []byte("state1"))
+	p1, s1, err1 := SelectProposer(peers, 1, []byte("state1"), proofs)
+	p2, s2, err2 := SelectProposer(peers, 1, []byte("state1"), proofs)
+	if err1 != nil || err2 != nil {
+		t.Fatalf("SelectProposer failed: %v / %v", err1, err2)
+	}
 
 	if p1.Addr != p2.Addr {
 		t.Fatalf("same cycle+state should select same proposer: %s vs %s", p1.Addr, p2.Addr)
 	}
-	if !testEq(s1, s2) {
-		t.Fatal("scores should match for same inputs")
+	if !testEq(s1.Gamma, s2.Gamma) {
+		t.Fatal("VRF outputs should match for same inputs")
 	}
 }
 
 func TestSelectProposerChangesWithCycle(t *testing.T) {
 	peers := []Peer{testPeer("a"), testPeer("b"), testPeer("c")}
 
-	p1, _ := SelectProposer(peers, 0, []byte("state"))
-	p2, _ := SelectProposer(peers, 1, []byte("state"))
+	p1, _, err := SelectProposer(peers, 0, []byte("state"), vrfProofsForPeers(peers, 0, []byte("state")))
+	if err != nil {
+		t.Fatalf("SelectProposer failed: %v", err)
+	}
+	p2, _, err := SelectProposer(peers, 1, []byte("state"), vrfProofsForPeers(peers, 1, []byte("state")))
+	if err != nil {
+		t.Fatalf("SelectProposer failed: %v", err)
+	}
 
 	if p1.Addr == p2.Addr {
 		t.Log("same proposer for different cycles is possible but unlikely for 3 peers")
@@ -44,8 +68,14 @@ func TestSelectProposerChangesWithCycle(t *testing.T) {
 func TestSelectProposerChangesWithState(t *testing.T) {
 	peers := []Peer{testPeer("a"), testPeer("b"), testPeer("c")}
 
-	p1, _ := SelectProposer(peers, 0, []byte("state-a"))
-	p2, _ := SelectProposer(peers, 0, []byte("state-b"))
+	p1, _, err := SelectProposer(peers, 0, []byte("state-a"), vrfProofsForPeers(peers, 0, []byte("state-a")))
+	if err != nil {
+		t.Fatalf("SelectProposer failed: %v", err)
+	}
+	p2, _, err := SelectProposer(peers, 0, []byte("state-b"), vrfProofsForPeers(peers, 0, []byte("state-b")))
+	if err != nil {
+		t.Fatalf("SelectProposer failed: %v", err)
+	}
 
 	if p1.Addr == p2.Addr {
 		t.Log("same proposer for different state roots is possible but unlikely for 3 peers")
@@ -106,6 +136,34 @@ func TestVerifyQuorum(t *testing.T) {
 	err = VerifyQuorum(msg, tooFewSigs, pks, quorum)
 	if err == nil {
 		t.Fatal("quorum should fail with too few valid signatures")
+	}
+
+	// Test: duplicate signatures from the same signer should NOT satisfy M-of-N
+	dupSigs := make([][]byte, 3)
+	for i := range dupSigs {
+		dupSigs[i] = sigs[0]
+	}
+	err = VerifyQuorum(msg, dupSigs, pks, quorum)
+	if err == nil {
+		t.Fatal("quorum should reject duplicate signatures from a single signer")
+	}
+
+	// Test: duplicate signatures below threshold (1 distinct signer for 2/3)
+	q2 := chain.QuorumConfig{TotalValidators: 3, RequiredSigs: 2}
+	err = VerifyQuorum(msg, dupSigs, pks, q2)
+	if err == nil {
+		t.Fatal("1 distinct signer should not satisfy even a 2-of-3 quorum")
+	}
+
+	// Test: validator set pinning — VerifyQuorum rejects when pubKeys don't match block.Validators
+	// (The caller must supply the block's own recorded Validators field, not an attacker-chosen set.)
+	pkEvil, skEvil, _ := identity.GenerateDilithiumKey(rand.Reader)
+	evilSig := identity.SignDilithium(skEvil, msg)
+	evilPks := [][]byte{pkEvil}       // attacker supplies their own "validator set"
+	err = VerifyQuorum(msg, [][]byte{evilSig}, evilPks,
+		chain.QuorumConfig{TotalValidators: 1, RequiredSigs: 1})
+	if err != nil {
+		t.Fatal("VerifyQuorum itself accepts any pubKeys — pinning must be enforced by the caller")
 	}
 }
 

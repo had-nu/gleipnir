@@ -14,6 +14,8 @@ type GossipChannel interface {
 	GetProposed(cycle uint64) *chain.Block
 	PublishSig(sig BlockSig)
 	GetSigs(cycle uint64) []BlockSig
+	PublishVRFProof(proof VRFProofMsg)
+	GetVRFProofs(cycle uint64) []VRFProofMsg
 }
 
 type BlockSig struct {
@@ -22,11 +24,18 @@ type BlockSig struct {
 	SignerID string
 }
 
+type VRFProofMsg struct {
+	Cycle    uint64
+	Proof    []byte // serialized VRFProof
+	SignerID string
+}
+
 type MemoryBus struct {
-	mu        sync.Mutex
-	entries   []chain.ProvenanceEntry
-	proposals map[uint64]*chain.Block
-	sigs      map[uint64][]BlockSig
+	mu         sync.Mutex
+	entries    []chain.ProvenanceEntry
+	proposals  map[uint64]*chain.Block
+	sigs       map[uint64][]BlockSig
+	vrfProofs  map[uint64][]VRFProofMsg
 }
 
 func NewMemoryBus() *MemoryBus {
@@ -34,6 +43,7 @@ func NewMemoryBus() *MemoryBus {
 		entries:   make([]chain.ProvenanceEntry, 0),
 		proposals: make(map[uint64]*chain.Block),
 		sigs:      make(map[uint64][]BlockSig),
+		vrfProofs: make(map[uint64][]VRFProofMsg),
 	}
 }
 
@@ -99,5 +109,24 @@ func (b *MemoryBus) GetSigs(cycle uint64) []BlockSig {
 	defer b.mu.Unlock()
 	out := make([]BlockSig, len(b.sigs[cycle]))
 	copy(out, b.sigs[cycle])
+	return out
+}
+
+func (b *MemoryBus) PublishVRFProof(proof VRFProofMsg) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, existing := range b.vrfProofs[proof.Cycle] {
+		if existing.SignerID == proof.SignerID {
+			return
+		}
+	}
+	b.vrfProofs[proof.Cycle] = append(b.vrfProofs[proof.Cycle], proof)
+}
+
+func (b *MemoryBus) GetVRFProofs(cycle uint64) []VRFProofMsg {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := make([]VRFProofMsg, len(b.vrfProofs[cycle]))
+	copy(out, b.vrfProofs[cycle])
 	return out
 }

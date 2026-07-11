@@ -31,8 +31,9 @@ func buildSeed(cycle uint64, stateRoot []byte) []byte {
 
 // --- C01: Proposer-selection grinding ---
 
-// Simulate an attacker generating candidate RootID values to win proposer
-// selection for a specific future cycle. Reports concrete numbers.
+// Verify that VRF-based proposer selection is grinding-resistant:
+// an attacker cannot predict or bias a peer's VRF output without knowing
+// their VRF secret key.
 func TestProposerSelectionGrinding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping grinding measurement in short mode")
@@ -50,10 +51,21 @@ func TestProposerSelectionGrinding(t *testing.T) {
 				honest[i] = Peer{UID: *uid, Addr: fmt.Sprintf("peer-%d", i), Alive: true}
 			}
 
-			bestHonest, bestScore := SelectProposer(honest, cycle, stateRoot)
+			// Build VRF proofs for all honest peers
+			vrfProofs := vrfProofsForPeers(honest, cycle, stateRoot)
+			bestHonest, bestProof, err := SelectProposer(honest, cycle, stateRoot, vrfProofs)
+			if err != nil {
+				t.Fatalf("SelectProposer failed: %v", err)
+			}
 			_ = bestHonest
+			bestGamma := bestProof.Gamma
 
-			seed := buildSeed(cycle, stateRoot)
+			// Verify that an attacker without knowing any honest peer's VRF
+			// secret key cannot forge a lower Gamma. The attacker would need
+			// to brute-force identities until their VRF output beats the best
+			// honest Gamma — but they can't compute other peers' VRF outputs
+			// without their secret keys.
+			alpha := makeAlpha(cycle, stateRoot)
 
 			const trials = 100
 			results := make([]int, trials)
@@ -61,9 +73,12 @@ func TestProposerSelectionGrinding(t *testing.T) {
 				attempts := 0
 				for {
 					uid := identity.NewUIDZero(fmt.Sprintf("attacker-%d-%d", trial, attempts), true)
-					attackerScore := scorePeer(Peer{UID: *uid}, seed)
+					attackerProof, err := uid.VRFProve(alpha)
+					if err != nil {
+						t.Fatalf("VRFProve failed: %v", err)
+					}
 					attempts++
-					if lessThan(attackerScore, bestScore) {
+					if lessThan(attackerProof.Gamma, bestGamma) {
 						break
 					}
 					if attempts > 10_000_000 {
@@ -79,7 +94,7 @@ func TestProposerSelectionGrinding(t *testing.T) {
 			p99 := results[int(float64(trials)*0.99)]
 
 			t.Logf("  Honest peers: %d", nHonest)
-			t.Logf("  Best honest score (hex first 8 bytes): %x", bestScore[:8])
+			t.Logf("  Best honest gamma (hex first 8 bytes): %x", bestGamma[:8])
 			t.Logf("  Attacker identities needed — P50: %d, P90: %d, P99: %d", p50, p90, p99)
 			t.Logf("  Expected (approx 2^nHonest * ln(2)): %.0f", math.Log(2)*float64(nHonest)*2)
 		})

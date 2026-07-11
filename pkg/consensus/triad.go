@@ -2,73 +2,76 @@
 package consensus
 
 import (
-	"crypto/sha256"
 	"encoding/binary"
+	"errors"
+	"log"
 
 	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
 type Triad [3][]byte
 
-// SelectProposerVRF selects the proposer using Verifiable Random Function (VRF).
-// Each peer's VRF output is computed deterministically from (cycle || stateRoot),
-// and the peer with the lowest VRF output (gamma) becomes the proposer.
-// This replaces the old hash-based leader election with a true VRF per RFC 9381.
-func SelectProposerVRF(peers []Peer, cycle uint64, stateRoot []byte) (Peer, []byte, []*identity.VRFProof, error) {
-	seed := make([]byte, 8+len(stateRoot))
-	binary.LittleEndian.PutUint64(seed, cycle)
-	copy(seed[8:], stateRoot)
+var ErrVRFSelectionFailed = errors.New("VRF proposer selection: no valid proofs")
 
-	// Each peer's VRF output is computed from their public key
+// SelectProposer selects the proposer using VRF. peerProofs maps peer hex ID → VRFProof.
+// Each peer computes their own VRF proof locally with their secret key, then gossips it.
+// The function verifies every proof against the peer's VRF public key before comparing.
+func SelectProposer(peers []Peer, cycle uint64, stateRoot []byte,
+	peerProofs map[string]*identity.VRFProof) (Peer, *identity.VRFProof, error) {
+
+	alpha := makeAlpha(cycle, stateRoot)
+	return SelectProposerVRF(peers, alpha, peerProofs)
+}
+
+// SelectProposerVRF selects the proposer using real ECVRF per RFC 9381.
+// peerProofs maps peer hex ID → VRFProof, each computed locally by the peer.
+// Every proof is cryptographically verified against the peer's VRF public key.
+// The peer with the lowest Gamma (VRF output) is selected.
+func SelectProposerVRF(peers []Peer, alpha []byte, peerProofs map[string]*identity.VRFProof) (Peer, *identity.VRFProof, error) {
+	if len(peers) == 0 {
+		return Peer{}, nil, ErrVRFSelectionFailed
+	}
+
 	var best Peer
+	var bestProof *identity.VRFProof
 	var bestGamma []byte
-	proofs := make([]*identity.VRFProof, len(peers))
 
-	for i, p := range peers {
-		// Compute VRF output for this peer's public key
-		gamma := computeVRFOutput(seed, p.UID.RootID)
-		proofs[i] = &identity.VRFProof{Gamma: gamma}
+	for _, p := range peers {
+		pid := p.UID.ID()
+		proof, ok := peerProofs[pid]
+		if !ok || proof == nil {
+			continue
+		}
+
+		// Verify the proof against this peer's VRF public key
+		gamma, err := p.UID.VRFVerifyProof(alpha, proof)
+		if err != nil {
+			log.Printf("VRF: proof verification failed for peer %s: %v", pid, err)
+			continue
+		}
 
 		if bestGamma == nil || lessThan(gamma, bestGamma) {
 			best = p
+			bestProof = proof
 			bestGamma = gamma
 		}
 	}
 
-	return best, bestGamma, proofs, nil
-}
-
-// SelectProposerLegacy is the original hash-based leader election (for backward compatibility).
-func SelectProposerLegacy(peers []Peer, cycle uint64, stateRoot []byte) (Peer, []byte) {
-	seed := make([]byte, 8+len(stateRoot))
-	binary.LittleEndian.PutUint64(seed, cycle)
-	copy(seed[8:], stateRoot)
-
-	best := peers[0]
-	bestScore := scorePeer(best, seed)
-
-	for _, p := range peers[1:] {
-		s := scorePeer(p, seed)
-		if lessThan(s, bestScore) {
-			best = p
-			bestScore = s
-		}
+	if bestGamma == nil {
+		return Peer{}, nil, ErrVRFSelectionFailed
 	}
-
-	return best, bestScore
+	return best, bestProof, nil
 }
 
-// SelectProposer is the main entry point - uses VRF by default.
-func SelectProposer(peers []Peer, cycle uint64, stateRoot []byte) (Peer, []byte) {
-	// Use VRF-based selection
-	peer, gamma, _, err := SelectProposerVRF(peers, cycle, stateRoot)
-	if err != nil {
-		// Fallback to legacy
-		return SelectProposerLegacy(peers, cycle, stateRoot)
-	}
-	return peer, gamma
+// makeAlpha constructs the VRF input: (cycle || stateRoot)
+func makeAlpha(cycle uint64, stateRoot []byte) []byte {
+	alpha := make([]byte, 8+len(stateRoot))
+	binary.LittleEndian.PutUint64(alpha, cycle)
+	copy(alpha[8:], stateRoot)
+	return alpha
 }
 
+// SelectTriad selects the triad members (proposer + next 2 peers).
 func SelectTriad(peers []Peer, proposerIdx int, n int) Triad {
 	a := peers[proposerIdx].UID.RootID
 	b := peers[(proposerIdx+1)%n].UID.RootID
@@ -76,25 +79,7 @@ func SelectTriad(peers []Peer, proposerIdx int, n int) Triad {
 	return Triad{a, b, c}
 }
 
-// computeVRFOutput deterministically computes a VRF-like output from a seed and peer's public key.
-// This is a simplified version - in production, each peer would generate their own VRF proof.
-func computeVRFOutput(seed []byte, peerRootID []byte) []byte {
-	// Hash(peerID || seed) - simplified VRF output
-	h := sha256.New()
-	h.Write(peerRootID)
-	h.Write(seed)
-	return h.Sum(nil)
-}
-
-func scorePeer(p Peer, seed []byte) []byte {
-	h := sha256.New()
-	h.Write(p.UID.RootID)
-	h.Write(seed)
-	return h.Sum(nil)
-}
-
 func lessThan(a, b []byte) bool {
-	// Compare as big-endian integers
 	for i := 0; i < len(a) && i < len(b); i++ {
 		if a[i] != b[i] {
 			return a[i] < b[i]

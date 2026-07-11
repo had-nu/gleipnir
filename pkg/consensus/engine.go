@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"sync"
@@ -315,8 +314,43 @@ func (e *Engine) RunCycle() {
 	if e.gossip == nil {
 		proposerPeers = []Peer{{UID: e.node.UID, Addr: e.node.Addr, Alive: true}}
 	}
-	proposer, _ := SelectProposer(proposerPeers, cycle, rootArr[:])
-	proposerHex := hex.EncodeToString(proposer.UID.RootID)
+
+	// Compute local VRF proof for proposer selection
+	alpha := makeAlpha(cycle, rootArr[:])
+	localProof, vrfErr := e.node.UID.VRFProve(alpha)
+	if vrfErr != nil {
+		log.Printf("IPC cycle %d: VRF proof error: %v", cycle, vrfErr)
+		e.state.Cycle++
+		return
+	}
+
+	// Publish VRF proof to gossip network
+	if e.gossip != nil {
+		proofBytes := identity.MarshalVRFProof(localProof)
+		e.gossip.PublishVRFProof(VRFProofMsg{Cycle: cycle, Proof: proofBytes, SignerID: myUIDHex})
+	}
+
+	// Collect all VRF proofs (local + from gossip)
+	vrfProofs := make(map[string]*identity.VRFProof)
+	vrfProofs[myUIDHex] = localProof
+	if e.gossip != nil {
+		for _, msg := range e.gossip.GetVRFProofs(cycle) {
+			p, err := identity.UnmarshalVRFProof(msg.Proof)
+			if err == nil {
+				if _, exists := vrfProofs[msg.SignerID]; !exists {
+					vrfProofs[msg.SignerID] = p
+				}
+			}
+		}
+	}
+
+	proposer, _, vrfErr := SelectProposer(proposerPeers, cycle, rootArr[:], vrfProofs)
+	if vrfErr != nil {
+		log.Printf("IPC cycle %d: VRF proposer selection failed: %v", cycle, vrfErr)
+		e.state.Cycle++
+		return
+	}
+	proposerHex := proposer.UID.ID()
 	amProposer := proposerHex == myUIDHex
 
 	if nodeState, ok := e.state.Nodes[proposerHex]; ok && nodeState.Status <= 0 {
