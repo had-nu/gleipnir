@@ -12,12 +12,12 @@ var ErrNotFound = errors.New("smt: key not found")
 const hashLen = 32
 
 type node struct {
-	left  [hashLen]byte
-	right [hashLen]byte
-	hash  [hashLen]byte
-	leaf  bool
-	key   []byte
-	value []byte
+	Left  [hashLen]byte `json:"left"`
+	Right [hashLen]byte `json:"right"`
+	Hash  [hashLen]byte `json:"hash"`
+	Leaf  bool          `json:"leaf"`
+	Key   []byte        `json:"key"`
+	Value []byte        `json:"value"`
 }
 
 type SparseMerkleTree struct {
@@ -83,39 +83,39 @@ func (t *SparseMerkleTree) insertAt(current [hashLen]byte, key []byte, value []b
 
 	if !exists {
 		lh := leafHash(key, value)
-		t.store[lh] = &node{leaf: true, key: key, value: value, hash: lh}
+		t.store[lh] = &node{Leaf: true, Key: key, Value: value, Hash: lh}
 		return lh
 	}
 
-	if n.leaf {
-		if bytes.Equal(n.key, key) {
+	if n.Leaf {
+		if bytes.Equal(n.Key, key) {
 			lh := leafHash(key, value)
-			t.store[lh] = &node{leaf: true, key: key, value: value, hash: lh}
+			t.store[lh] = &node{Leaf: true, Key: key, Value: value, Hash: lh}
 			return lh
 		}
 
 		if depth < 0 {
-			return n.hash
+			return n.Hash
 		}
 
-		existingLH := leafHash(n.key, n.value)
+		existingLH := leafHash(n.Key, n.Value)
 		newLH := leafHash(key, value)
-		t.store[newLH] = &node{leaf: true, key: key, value: value, hash: newLH}
-		return t.splitAndInsert(n.key, existingLH, key, newLH, depth)
+		t.store[newLH] = &node{Leaf: true, Key: key, Value: value, Hash: newLH}
+		return t.splitAndInsert(n.Key, existingLH, key, newLH, depth)
 	}
 
 	b := path(key, depth)
 	if b == 0 {
-		newLeft := t.insertAt(n.left, key, value, depth-1)
-		newRight := n.right
+		newLeft := t.insertAt(n.Left, key, value, depth-1)
+		newRight := n.Right
 		h := parentHash(newLeft, newRight)
-		t.store[h] = &node{left: newLeft, right: newRight, hash: h}
+		t.store[h] = &node{Left: newLeft, Right: newRight, Hash: h}
 		return h
 	} else {
-		newLeft := n.left
-		newRight := t.insertAt(n.right, key, value, depth-1)
+		newLeft := n.Left
+		newRight := t.insertAt(n.Right, key, value, depth-1)
 		h := parentHash(newLeft, newRight)
-		t.store[h] = &node{left: newLeft, right: newRight, hash: h}
+		t.store[h] = &node{Left: newLeft, Right: newRight, Hash: h}
 		return h
 	}
 }
@@ -133,22 +133,22 @@ func (t *SparseMerkleTree) splitAndInsert(key1 []byte, h1 [hashLen]byte, key2 []
 		zero := t.zeroes[depth]
 		if b1 == 0 {
 			h := parentHash(child, zero)
-			t.store[h] = &node{left: child, right: zero, hash: h}
+			t.store[h] = &node{Left: child, Right: zero, Hash: h}
 			return h
 		} else {
 			h := parentHash(zero, child)
-			t.store[h] = &node{left: zero, right: child, hash: h}
+			t.store[h] = &node{Left: zero, Right: child, Hash: h}
 			return h
 		}
 	}
 
 	if b1 == 0 {
 		h := parentHash(h1, h2)
-		t.store[h] = &node{left: h1, right: h2, hash: h}
+		t.store[h] = &node{Left: h1, Right: h2, Hash: h}
 		return h
 	} else {
 		h := parentHash(h2, h1)
-		t.store[h] = &node{left: h2, right: h1, hash: h}
+		t.store[h] = &node{Left: h2, Right: h1, Hash: h}
 		return h
 	}
 }
@@ -166,17 +166,17 @@ func (t *SparseMerkleTree) Get(key []byte) ([]byte, error) {
 		if !exists {
 			return nil, ErrNotFound
 		}
-		if n.leaf {
-			if bytes.Equal(n.key, key) {
-				return n.value, nil
+		if n.Leaf {
+			if bytes.Equal(n.Key, key) {
+				return n.Value, nil
 			}
 			return nil, ErrNotFound
 		}
 		b := path(key, depth)
 		if b == 0 {
-			current = n.left
+			current = n.Left
 		} else {
-			current = n.right
+			current = n.Right
 		}
 		depth--
 	}
@@ -194,21 +194,25 @@ func (t *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
 		if !exists {
 			return nil, ErrNotFound
 		}
-		if n.leaf {
+		if n.Leaf {
 			return proof, nil
 		}
 
 		b := path(key, depth)
 		if b == 0 {
-			proof = append([][hashLen]byte{n.right}, proof...)
-			current = n.left
+			proof = append([][hashLen]byte{n.Right}, proof...)
+			current = n.Left
 		} else {
-			proof = append([][hashLen]byte{n.left}, proof...)
-			current = n.right
+			proof = append([][hashLen]byte{n.Left}, proof...)
+			current = n.Right
 		}
 		depth--
 	}
 
+	// After exhausting depth levels, check if current hash is a leaf node.
+	if n, exists := t.store[current]; exists && n.Leaf {
+		return proof, nil
+	}
 	return nil, ErrNotFound
 }
 
@@ -238,3 +242,5 @@ func (t *SparseMerkleTree) BulkInsert(entries map[string][]byte) error {
 	}
 	return nil
 }
+
+

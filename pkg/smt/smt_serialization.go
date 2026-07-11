@@ -34,12 +34,12 @@ func (t *SparseMerkleTree) MarshalJSON() ([]byte, error) {
 	for k, v := range t.store {
 		keyStr := hex.EncodeToString(k[:])
 		st.Store[keyStr] = serializableNode{
-			Left:  v.left,
-			Right: v.right,
-			Hash:  v.hash,
-			Leaf:  v.leaf,
-			Key:   v.key,
-			Value: v.value,
+			Left:  v.Left,
+			Right: v.Right,
+			Hash:  v.Hash,
+			Leaf:  v.Leaf,
+			Key:   v.Key,
+			Value: v.Value,
 		}
 	}
 
@@ -82,12 +82,12 @@ func (t *SparseMerkleTree) UnmarshalJSON(data []byte) error {
 		var k [hashLen]byte
 		copy(k[:], kBytes)
 		t.store[k] = &node{
-			left:  v.Left,
-			right: v.Right,
-			hash:  v.Hash,
-			leaf:  v.Leaf,
-			key:   v.Key,
-			value: v.Value,
+			Left:  v.Left,
+			Right: v.Right,
+			Hash:  v.Hash,
+			Leaf:  v.Leaf,
+			Key:   v.Key,
+			Value: v.Value,
 		}
 	}
 
