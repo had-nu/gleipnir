@@ -65,7 +65,7 @@ A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an i
 # Build
 make build
 
-# Bootstrap a 3-node local network
+# Bootstrap a 5-validator local network
 docker compose up -d
 
 # Submit a hash
@@ -80,12 +80,15 @@ provectl verify --hash <sha256>
 ```
 provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
                  ↕                         ↕
-           pipeline-sim               Libp2p (future)
-                 ↕
-           SubChainManager (per-service SMT → anchoring → parent chain)
+           SubChainManager      Libp2p GossipSub + mDNS
+           (per-service SMT →   (peer discovery & transport)
+            anchoring →
+            parent chain)
                  ↕
            Transport (Kyber1024 KEM → ChaCha20-Poly1305 AEAD)
 ```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architectural description, deployment topology, and sub-chain model.
 
 ## Current status
 

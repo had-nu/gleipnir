@@ -479,7 +479,7 @@ adversarial test coverage must all be confirmed before marking an issue done.
 
 | Goal | Start here |
 |------|------------|
-| Understand the protocol | `spec/v1/PROTOCOL.md` |
+| Understand the protocol | `docs/ARCHITECTURE.md` |
 | See the engine in action | `pkg/consensus/engine.go` → `RunCycle()` |
 | Add a new command | `cmd/provectl/main.go` |
 | Embed in another project | `pkg/chain/segment.go` → `Anchorer` |

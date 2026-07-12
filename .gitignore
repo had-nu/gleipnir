@@ -3,6 +3,7 @@ bin/
 *.key
 *.pem
 .env
+docs/internal/
 .idea/
 .vscode/
 *.swp

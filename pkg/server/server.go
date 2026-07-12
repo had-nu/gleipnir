@@ -35,6 +35,10 @@ func NewServer(nodeID string, uid *identity.UIDZeroSoulbound) *Server {
 	}
 }
 
+func (s *Server) Engine() *consensus.Engine {
+	return s.engine
+}
+
 func (s *Server) Stop() {
 	s.engine.Stop()
 }
