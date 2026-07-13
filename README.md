@@ -17,11 +17,16 @@ Reference implementation of **IPC (Immutable Provenance Chain)** — a minimal, 
 
 ## Problem
 
-Provenance data (hash anchors, document fingerprints, CI/CD attestations) is scattered across opaque centralized services with no tamper-evident chain. Existing blockchains are overkill — expensive, slow, and require tokens or complex setup.
+**Knowing is not the same as demonstrating.** A team can have correct internal processes, rigorous logging, and airtight controls — yet fail an external audit because the evidence was never designed to be read by an outsider. Logs can be rotated, databases can be altered, timestamps can be faked. Even with the best intentions, *showing* that a given artifact existed at a given point in time, untouched, requires a system whose entire purpose is to be inspected.
+
+Existing solutions fall short:
+- **Centralised timestamping services** are opaque — you trust their word, not their proof.
+- **General-purpose blockchains** are overkill — expensive, slow, token-dependent, and require complex setup for a single task: anchoring hashes.
+- **Homegrown audit trails** are not designed for adversarial review — the same team that runs the process also controls the evidence.
 
 ## Solution
 
-A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a VRF-selected proposer and validated by a configurable threshold of validators.
+A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a VRF-selected proposer and validated by a configurable threshold of validators. It is designed from the ground up to produce evidence that survives adversarial scrutiny — evidence built to be read by someone who does not trust you.
 
 **Sub-chains** extend the model: every service (Wardex, anti-ransomware, etc.) gets its own SMT-anchored provenance chain, periodically checkpointed into the parent chain via cross-chain proofs.
 
@@ -42,6 +47,18 @@ A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an i
 - **Client validation** — exported `ValidateEntry`, `IsZeroHash`, machine-readable error codes (see `pkg/validation`)
 - **Bounded rate limiting** — sliding-window per-submitter with LRU eviction (see `pkg/consensus/ratelimit.go`)
 - **Contract-derived UID0** — deterministic identity bound to company contract hash (see `pkg/identity/contract.go`)
+
+## Compliance narrative
+
+| Technical feature | What it means for an auditor |
+|---|---|
+| **M-of-N Dilithium3 quorum** | No single party can forge or backdate evidence — collusion of M validators is required. The threshold is configurable (e.g., 3/3 for high-assurance, 2/3 for operational flexibility). |
+| **ECVRF leader election** | Block proposers are selected verifiably at random — no one chooses who builds the next block, so no one can game the timeline. |
+| **Instant finality** | One cycle = one block = final. No forks, no rollbacks. Once anchored, a hash is permanently recorded — there is no "undo" window. |
+| **Sparse Merkle Tree (SMT)** | Every block commits to a verifiable state root. A client can request a compact proof that a specific hash was included — and any third party can verify that proof against the public chain. |
+| **Sub-chains + cross-chain proofs** | Each service (e.g., CI/CD pipeline, document management, anti-ransomware) gets its own isolated chain, periodically checkpointed into the parent chain. An auditor sees per-service evidence plus a cryptographic link to the global timeline. |
+| **Contract-bound UID0 identity** | Each validator node is cryptographically bound to a company contract hash — the node speaks for the legal entity, not for an anonymous key. |
+| **Laplacian self-supervision** | The network monitors its own health via diffusion eigenvalues. An auditor can verify that the network was operational at the claimed times, not just that blocks exist. |
 
 ## How it works
 
