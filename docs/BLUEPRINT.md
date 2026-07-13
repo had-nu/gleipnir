@@ -373,7 +373,7 @@ SMT proofs are flattened `[depth][32]byte` → `[]byte` (8192 bytes for depth 25
 
 ## Extension points
 
-### 1. Custom drivers (Wardex-style)
+### 1. Custom drivers
 
 The `Anchorer` interface allows any provenance backend to be substituted. Add a new driver by implementing:
 

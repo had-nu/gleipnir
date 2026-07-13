@@ -34,7 +34,7 @@ Existing solutions fall short:
 
 A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an immutable chain with no tokens, no mining, no external dependencies. Each cycle produces one anchored block signed by a VRF-selected proposer and validated by a configurable threshold of validators. It is designed from the ground up to produce evidence of **who decided what, when, and based on what** — evidence that survives adversarial scrutiny because it was built to be read by someone who does not trust you.
 
-**Sub-chains** extend the model: every service (Wardex, anti-ransomware, etc.) gets its own SMT-anchored provenance chain, periodically checkpointed into the parent chain via cross-chain proofs.
+**Sub-chains** extend the model: every service gets its own SMT-anchored provenance chain, periodically checkpointed into the parent chain via cross-chain proofs.
 
 ## What it delivers
 
@@ -62,7 +62,7 @@ A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an i
 | **ECVRF leader election** | Block proposers are selected verifiably at random — no one chooses who builds the next block, so no one can game the timeline. |
 | **Instant finality** | One cycle = one block = final. No forks, no rollbacks. Once anchored, a hash is permanently recorded — there is no "undo" window. |
 | **Sparse Merkle Tree (SMT)** | Every block commits to a verifiable state root. A client can request a compact proof that a specific hash was included — and any third party can verify that proof against the public chain. |
-| **Sub-chains + cross-chain proofs** | Each service (e.g., CI/CD pipeline, document management, anti-ransomware) gets its own isolated chain, periodically checkpointed into the parent chain. An auditor sees per-service evidence plus a cryptographic link to the global timeline. |
+| **Sub-chains + cross-chain proofs** | Each service gets its own isolated chain, periodically checkpointed into the parent chain. An auditor sees per-service evidence plus a cryptographic link to the global timeline. |
 | **Contract-bound UID0 identity** | Each validator node is cryptographically bound to a company contract hash — the node speaks for the legal entity, not for an anonymous key. |
 | **Decision anchoring** | Each anchored entry includes the submitter's identity and a human-readable label. An auditor can trace a specific artifact back to the person or system that submitted it, the moment it was submitted, and the block that finalised it — establishing a cryptographically verifiable chain of custody from decision to deployment. |
 | **Laplacian self-supervision** | The network monitors its own health via diffusion eigenvalues. An auditor can verify that the network was operational at the claimed times, not just that blocks exist. |

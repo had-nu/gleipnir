@@ -34,7 +34,7 @@ As soluções existentes são insuficientes:
 
 Uma rede leve de **quórum M-de-N Dilithium3** que ancora hashes numa cadeia imutável sem tokens, sem mineração, sem dependências externas. Cada ciclo produz um bloco ancorado assinado por um proponente selecionado por VRF e validado por um limiar configurável de validadores. É desenhado de raiz para produzir evidência de **quem decidiu o quê, quando, e com base em quê** — evidência que sobrevive a escrutínio adversarial porque foi construída para ser lida por alguém que não confia em si.
 
-As **sub-chains** estendem o modelo: cada serviço (Wardex, anti-ransomware, etc.) tem a sua própria cadeia de proveniência ancorada numa SMT, com checkpoint periódico na cadeia principal através de provas cross-chain.
+As **sub-chains** estendem o modelo: cada serviço tem a sua própria cadeia de proveniência ancorada numa SMT, com checkpoint periódico na cadeia principal através de provas cross-chain.
 
 ## O que oferece
 
@@ -62,7 +62,7 @@ As **sub-chains** estendem o modelo: cada serviço (Wardex, anti-ransomware, etc
 | **Eleição de líder ECVRF** | Os proponentes de blocos são selecionados verifi cavelmente ao acaso — ninguém escolhe quem constrói o próximo bloco, portanto ninguém pode manipular a linha temporal. |
 | **Finalidade instantânea** | Um ciclo = um bloco = final. Sem forks, sem rollbacks. Uma vez ancorado, um hash fica registado permanentemente — não há janela de "desfazer". |
 | **Sparse Merkle Tree (SMT)** | Cada bloco compromete-se com uma raiz de estado verificável. Um cliente pode solicitar uma prova compacta de que um hash específico foi incluído — e qualquer terceiro pode verificar essa prova contra a cadeia pública. |
-| **Sub-chains + provas cross-chain** | Cada serviço (ex.: pipeline CI/CD, gestão documental, anti-ransomware) tem a sua própria cadeia isolada, com checkpoint periódico na cadeia principal. Um auditor vê evidência por serviço mais uma ligação criptográfica à linha temporal global. |
+| **Sub-chains + provas cross-chain** | Cada serviço tem a sua própria cadeia isolada, com checkpoint periódico na cadeia principal. Um auditor vê evidência por serviço mais uma ligação criptográfica à linha temporal global. |
 | **Identidade UID0 vinculada a contrato** | Cada nó validador está criptograficamente ligado ao hash de um contrato empresarial — o nó fala pela entidade legal, não por uma chave anónima. |
 | **Ancoragem de decisões** | Cada entrada ancorada inclui a identidade do submissor e um rótulo legível por humanos. Um auditor pode rastrear um artefacto específico até à pessoa ou sistema que o submeteu, o momento da submissão e o bloco que o finalizou — estabelecendo uma cadeia de custódia criptograficamente verificável desde a decisão até à implementação. |
 | **Auto-supervisão Laplaciana** | A rede monitoriza a sua própria saúde através de valores próprios de difusão. Um auditor pode verificar que a rede estava operacional nos momentos reclamados, não apenas que os blocos existem. |
