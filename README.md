@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <a href="README.pt.md">🇧🇷&nbsp;<b>Ler em Português</b> &rarr;</a>
+  <a href="README.pt.md"><b>Ler em Portugues</b> &gt;</a>
 </p>
 
 Reference implementation of **IPC (Immutable Provenance Chain)** — a minimal, cryptographically auditable provenance anchor network.
