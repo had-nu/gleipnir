@@ -25,6 +25,82 @@ func TestProvenanceEntry(t *testing.T) {
 	}
 }
 
+func TestProvenanceEntryWithApprover(t *testing.T) {
+	hash := sha256.Sum256([]byte("test-approver"))
+	entry := ProvenanceEntry{
+		Hash:      hash,
+		Submitter: []byte("submitter-uid"),
+		Timestamp: 1700000000,
+		Label:     "test-approver-label",
+		Approver:  []byte("approver-uid"),
+	}
+
+	if string(entry.Approver) != "approver-uid" {
+		t.Fatalf("expected approver approver-uid, got %s", string(entry.Approver))
+	}
+}
+
+func TestProvenanceEntryWithReference(t *testing.T) {
+	hash := sha256.Sum256([]byte("test-ref"))
+	refHash := sha256.Sum256([]byte("related-entry"))
+	entry := ProvenanceEntry{
+		Hash:      hash,
+		Submitter: []byte("submitter"),
+		Timestamp: 1700000000,
+		Label:     "test-ref-label",
+		Reference: refHash[:],
+	}
+
+	if len(entry.Reference) != 32 {
+		t.Fatalf("expected reference to be 32 bytes, got %d", len(entry.Reference))
+	}
+}
+
+func TestProvenanceEntryWithSignature(t *testing.T) {
+	hash := sha256.Sum256([]byte("test-sig"))
+	entry := ProvenanceEntry{
+		Hash:      hash,
+		Submitter: []byte("submitter"),
+		Timestamp: 1700000000,
+		Label:     "test-sig-label",
+		Signature: []byte("dilithium3-signature-bytes"),
+	}
+
+	if len(entry.Signature) == 0 {
+		t.Fatal("signature should not be empty")
+	}
+}
+
+func TestProvenanceEntryAllFields(t *testing.T) {
+	hash := sha256.Sum256([]byte("test-all-fields"))
+	refHash := sha256.Sum256([]byte("related"))
+	entry := ProvenanceEntry{
+		Hash:      hash,
+		Submitter: []byte("submitter"),
+		Timestamp: 1700000000,
+		Label:     "all-fields",
+		Approver:  []byte("approver"),
+		Reference: refHash[:],
+		Signature: []byte("signature-data"),
+	}
+
+	if string(entry.Submitter) != "submitter" {
+		t.Fatal("submitter mismatch")
+	}
+	if string(entry.Approver) != "approver" {
+		t.Fatal("approver mismatch")
+	}
+	if len(entry.Reference) != 32 {
+		t.Fatal("reference mismatch")
+	}
+	if len(entry.Signature) == 0 {
+		t.Fatal("signature missing")
+	}
+	if entry.Label != "all-fields" {
+		t.Fatal("label mismatch")
+	}
+}
+
 func TestBlockBasic(t *testing.T) {
 	hash := sha256.Sum256([]byte("entry"))
 	block := Block{

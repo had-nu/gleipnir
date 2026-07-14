@@ -12,18 +12,21 @@ package client
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"time"
 
+	"github.com/had-nu/gleipnir/pkg/identity"
 	pb "github.com/had-nu/gleipnir/pkg/server/pb"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
 type Client struct {
-	conn   *grpc.ClientConn
-	pb     pb.ProvenanceAnchorClient
-	config Config
+	conn     *grpc.ClientConn
+	pb       pb.ProvenanceAnchorClient
+	config   Config
+	identity *identity.UIDZeroSoulbound
 }
 
 type Config struct {
@@ -61,16 +64,30 @@ func NewWithConfig(cfg Config) (*Client, error) {
 	}, nil
 }
 
+func NewWithIdentity(addr string, uid *identity.UIDZeroSoulbound) (*Client, error) {
+	c, err := New(addr)
+	if err != nil {
+		return nil, err
+	}
+	c.identity = uid
+	return c, nil
+}
+
 func (c *Client) Close() error {
 	return c.conn.Close()
 }
 
 func (c *Client) Submit(ctx context.Context, hash []byte, label string) (*Ticket, error) {
-	resp, err := c.pb.SubmitHash(ctx, &pb.SubmitRequest{
+	req := &pb.SubmitRequest{
 		Hash:      hash,
 		Label:     label,
 		Timestamp: time.Now().UnixNano(),
-	})
+	}
+	if c.identity != nil {
+		req.Submitter = c.identity.RootID
+		req.Signature = signPayload(c.identity, req.Hash, req.Submitter, req.Timestamp, req.Label)
+	}
+	resp, err := c.pb.SubmitHash(ctx, req)
 	if err != nil {
 		return nil, fmt.Errorf("submit: %w", err)
 	}
@@ -79,7 +96,47 @@ func (c *Client) Submit(ctx context.Context, hash []byte, label string) (*Ticket
 		Hash:      hash,
 		Status:    resp.Status,
 		BlockTime: resp.BlockTime,
+		ErrorCode: resp.ErrorCode,
 	}, nil
+}
+
+func (c *Client) SubmitSigned(ctx context.Context, hash []byte, submitter []byte, label string, approver []byte, reference []byte, signer *identity.UIDZeroSoulbound) (*Ticket, error) {
+	ts := time.Now().UnixNano()
+	req := &pb.SubmitRequest{
+		Hash:      hash,
+		Submitter: submitter,
+		Label:     label,
+		Timestamp: ts,
+		Signature: signPayload(signer, hash, submitter, ts, label),
+	}
+	if len(approver) > 0 {
+		req.Approver = approver
+	}
+	if len(reference) > 0 {
+		req.Reference = reference
+	}
+	resp, err := c.pb.SubmitHash(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("submit: %w", err)
+	}
+
+	return &Ticket{
+		Hash:      hash,
+		Status:    resp.Status,
+		BlockTime: resp.BlockTime,
+		ErrorCode: resp.ErrorCode,
+	}, nil
+}
+
+func signPayload(uid *identity.UIDZeroSoulbound, hash, submitter []byte, ts int64, label string) []byte {
+	tsLE := make([]byte, 8)
+	binary.LittleEndian.PutUint64(tsLE, uint64(ts))
+	signed := make([]byte, 0, len(hash)+len(submitter)+len(tsLE)+len(label))
+	signed = append(signed, hash...)
+	signed = append(signed, submitter...)
+	signed = append(signed, tsLE...)
+	signed = append(signed, label...)
+	return identity.SignDilithium(uid.SecretKey, signed)
 }
 
 func (c *Client) WaitForAnchor(ctx context.Context, hash []byte) (*AnchorProof, error) {
@@ -128,6 +185,7 @@ type Ticket struct {
 	Hash      []byte
 	Status    string
 	BlockTime int64
+	ErrorCode string
 }
 
 type AnchorProof struct {

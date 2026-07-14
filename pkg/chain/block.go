@@ -21,6 +21,9 @@ type ProvenanceEntry struct {
 	Submitter []byte   `cbor:"1,keyasint"`
 	Timestamp int64    `cbor:"2,keyasint"`
 	Label     string   `cbor:"3,keyasint,omitempty"`
+	Approver  []byte   `cbor:"4,keyasint,omitempty"`
+	Reference []byte   `cbor:"5,keyasint,omitempty"`
+	Signature []byte   `cbor:"6,keyasint,omitempty"`
 }
 
 // Triad represents the three signers for a block (legacy 3/3).

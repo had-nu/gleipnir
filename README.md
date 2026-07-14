@@ -53,6 +53,9 @@ A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an i
 - **Client validation** — exported `ValidateEntry`, `IsZeroHash`, machine-readable error codes (see `pkg/validation`)
 - **Bounded rate limiting** — sliding-window per-submitter with LRU eviction (see `pkg/consensus/ratelimit.go`)
 - **Contract-derived UID0** — deterministic identity bound to company contract hash (see `pkg/identity/contract.go`)
+- **gRPC client authentication** — `SubmitHash` requires Dilithium3 caller signature verified against registered RootID
+- **Multi-identity entries** — `Approver` field for split-authority submissions, `Reference` field for cross-entry linking
+- **Per-entry non-repudiation** — Dilithium3 signature on each `ProvenanceEntry` binding submitter (and approver) to the anchored content
 
 ## Compliance narrative
 
@@ -64,7 +67,7 @@ A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an i
 | **Sparse Merkle Tree (SMT)** | Every block commits to a verifiable state root. A client can request a compact proof that a specific hash was included — and any third party can verify that proof against the public chain. |
 | **Sub-chains + cross-chain proofs** | Each service gets its own isolated chain, periodically checkpointed into the parent chain. An auditor sees per-service evidence plus a cryptographic link to the global timeline. |
 | **Contract-bound UID0 identity** | Each validator node is cryptographically bound to a company contract hash — the node speaks for the legal entity, not for an anonymous key. |
-| **Decision anchoring** | Each anchored entry includes the submitter's identity and a human-readable label. An auditor can trace a specific artifact back to the person or system that submitted it, the moment it was submitted, and the block that finalised it — establishing a cryptographically verifiable chain of custody from decision to deployment. |
+| **Decision anchoring** | Each anchored entry includes the submitter's identity, optionally an approver's identity for split-authority decisions, a reference to related entries for chained decisions, and a per-entry Dilithium3 signature for non-repudiation. An auditor can trace a specific artifact back to the person or system that submitted (and approved) it, linked to related evidence, with cryptographic proof binding each identity to the entry content. |
 | **Laplacian self-supervision** | The network monitors its own health via diffusion eigenvalues. An auditor can verify that the network was operational at the claimed times, not just that blocks exist. |
 
 ## How it works
@@ -116,23 +119,17 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architectural desc
 
 ## Current status
 
-`RunCycle()` supports **single-node** (`NewEngine`) and **multi-node** (`NewEngineWithPeers` + `GossipChannel`) modes. The multi-node path uses ECVRF proposer selection, builds blocks via gossip, verifies SMT root replication, and collects M-of-N Dilithium3 co-signatures. Sub-chains (`SubChainManager`) enable per-service anchoring with cross-chain proofs. Transport layer (`pkg/transport`) provides KEM-authenticated AEAD channels (Kyber1024 + ChaCha20-Poly1305).
+`RunCycle()` supports **single-node** (`NewEngine`) and **multi-node** (`NewEngineWithPeers` + `GossipChannel`) modes. The multi-node path uses ECVRF proposer selection, builds blocks via gossip, verifies SMT root replication, and collects M-of-N Dilithium3 co-signatures. Sub-chains (`SubChainManager`) enable per-service anchoring with cross-chain proofs.
 
-**Issues #1–4 resolved** (I1–I4):
-- **ECVRF leader election**: Ristretto255 VRF per RFC 9381 — each peer proves proposer selection with a verifiable, unpredictable cryptographic proof; grinding-resistant
-- **M-of-N BFT quorum**: configurable threshold (1/1 single-node, 3/3 or higher multi-node); duplicate-signature attack rejected (each distinct signer counted once)
-- **Kyber1024 KEM**: used in `pkg/transport/secure_conn.go` for encrypted peer channels
-- **Power iteration for λ₁**: shift-invert power iteration with Cholesky factorization; falls back to dense EigenSym for small matrices or non-convergence
+The `SubmitHash` gRPC endpoint requires Dilithium3 client authentication — each request carries a caller signature verified against a registered RootID. Entries support split-authority submissions (`Approver` field) and cross-entry linking (`Reference` field). Each `ProvenanceEntry` optionally carries a per-entry Dilithium3 signature for non-repudiation binding the submitter (and approver) to the anchored content.
 
-**Also complete** (G1–G6):
-- **gRPC API**: protobuf init panic resolved; server tests pass (`pkg/server`)
-- **P2P transport**: libp2p GossipSub + mDNS discovery (`pkg/transport/p2p`)
-- **Persistence**: BoltDB-backed `EngineStorage` auto-loads on init, auto-saves on `Stop()` and `RunCycle()` (`pkg/storage`)
-- **Client validation**: `pkg/validation` exports `ValidateEntry`, `IsZeroHash`, `ValidationError` with codes
-- **Rate limiting**: sliding-window per-submitter with LRU eviction (no memory leaks) (`pkg/consensus/ratelimit.go`)
-- **SMT depth**: configurable via `state.Config.SMTDepth` (default 256), used by engine + sub-chains
+**Consensus** — ECVRF leader election (Ristretto255, RFC 9381, grinding-resistant) with configurable M-of-N Dilithium3 quorum. Duplicate-signature attack rejected (each distinct signer counted once).
 
-The submission API is hardened (`pkg/consensus/api.go`): `Enqueue` validates entries and enforces rate limits, `RunCycle` recovers from panics, and `Engine.Stop` halts intake cleanly. UID0 root identity can be derived deterministically from a company contract hash (`pkg/identity/contract.go`), giving verifiable "node speaks for contract X" binding.
+**Transport** — KEM-authenticated AEAD channels via Kyber1024 + ChaCha20-Poly1305, with libp2p GossipSub + mDNS peer discovery (`pkg/transport/p2p`). BoltDB-backed persistence (`pkg/storage`), sliding-window rate limiting with LRU eviction (`pkg/consensus/ratelimit.go`), and power iteration for λ₁ with fallback to dense EigenSym (`pkg/state`).
+
+**Identity** — UID0 soulbound tokens with contract-bound derivation (`pkg/identity/contract.go`). Deterministic `NewUIDZeroFromContract(contractHash, nodeSalt, simulated)` binds a node to a legal entity.
+
+**Submission API** — `Enqueue` validates entries (rejects zero hashes, empty submitters, oversized labels) and enforces rate limits; `RunCycle` recovers from panics; `Engine.Stop` halts intake cleanly.
 
 ## Stack
 

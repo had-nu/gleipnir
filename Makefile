@@ -10,6 +10,7 @@ build:
 	go build -o $(BUILD_DIR)/provenanced ./cmd/provenanced
 	go build -o $(BUILD_DIR)/provectl ./cmd/provectl
 	go build -o $(BUILD_DIR)/pipeline-sim ./cmd/pipeline-sim
+	go build -o $(BUILD_DIR)/cube-room ./frontend-test/cube-room
 
 proto:
 	protoc --go_out=. --go_opt=module=$(PROJECT) \

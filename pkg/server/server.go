@@ -3,11 +3,14 @@ package server
 
 import (
 	"context"
+	"encoding/binary"
+	"encoding/hex"
 	"time"
 
 	"github.com/had-nu/gleipnir/pkg/chain"
 	"github.com/had-nu/gleipnir/pkg/consensus"
 	"github.com/had-nu/gleipnir/pkg/identity"
+	"github.com/had-nu/gleipnir/pkg/validation"
 	pb "github.com/had-nu/gleipnir/pkg/server/pb"
 )
 
@@ -16,10 +19,13 @@ type Server struct {
 	nodeID    string
 	identity  *identity.UIDZeroSoulbound
 	engine    *consensus.Engine
+	keys      map[string]*identity.UIDZeroSoulbound
 	startTime time.Time
 }
 
-func NewServer(nodeID string, uid *identity.UIDZeroSoulbound) *Server {
+type ServerOption func(*Server)
+
+func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOption) *Server {
 	node := consensus.Node{
 		UID:  *uid,
 		Addr: nodeID,
@@ -27,11 +33,23 @@ func NewServer(nodeID string, uid *identity.UIDZeroSoulbound) *Server {
 	eng := consensus.NewEngine(node, 3*time.Second)
 	eng.Start()
 
-	return &Server{
+	s := &Server{
 		nodeID:    nodeID,
 		identity:  uid,
 		engine:    eng,
+		keys:      make(map[string]*identity.UIDZeroSoulbound),
 		startTime: time.Now(),
+	}
+	s.keys[uid.ID()] = uid
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+func WithKey(uid *identity.UIDZeroSoulbound) ServerOption {
+	return func(s *Server) {
+		s.keys[uid.ID()] = uid
 	}
 }
 
@@ -44,6 +62,15 @@ func (s *Server) Stop() {
 }
 
 func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.SubmitResponse, error) {
+	if err := s.authenticateSubmit(req); err != nil {
+		code, _ := validation.FromError(err)
+		return &pb.SubmitResponse{
+			Accepted:  false,
+			Status:    err.Error(),
+			ErrorCode: code,
+		}, nil
+	}
+
 	var h [32]byte
 	copy(h[:], req.Hash)
 
@@ -53,10 +80,22 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 		Timestamp: req.Timestamp,
 		Label:     req.Label,
 	}
+	if len(req.Approver) > 0 {
+		entry.Approver = req.Approver
+	}
+	if len(req.Reference) > 0 {
+		entry.Reference = req.Reference
+	}
+	if len(req.Signature) > 0 {
+		entry.Signature = req.Signature
+	}
+
 	if err := s.engine.Enqueue(entry); err != nil {
+		code, _ := validation.FromError(err)
 		return &pb.SubmitResponse{
-			Accepted: false,
-			Status:   err.Error(),
+			Accepted:  false,
+			Status:    err.Error(),
+			ErrorCode: code,
 		}, nil
 	}
 
@@ -64,6 +103,40 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 		Accepted: true,
 		Status:   "pending",
 	}, nil
+}
+
+func (s *Server) authenticateSubmit(req *pb.SubmitRequest) error {
+	submitterID := hex.EncodeToString(req.Submitter)
+	uid, ok := s.keys[submitterID]
+	if !ok {
+		return validation.WrapValidationError(
+			validation.ErrCodeSubmitterMismatch,
+			"unknown submitter",
+			validation.ErrUnknownSubmitter,
+		)
+	}
+	if len(req.Signature) == 0 {
+		return validation.WrapValidationError(
+			validation.ErrCodeInvalidSignature,
+			"missing signature",
+			validation.ErrInvalidSignature,
+		)
+	}
+	ts := make([]byte, 8)
+	binary.LittleEndian.PutUint64(ts, uint64(req.Timestamp))
+	signed := make([]byte, 0, len(req.Hash)+len(req.Submitter)+len(ts)+len(req.Label))
+	signed = append(signed, req.Hash...)
+	signed = append(signed, req.Submitter...)
+	signed = append(signed, ts...)
+	signed = append(signed, req.Label...)
+	if !identity.VerifyDilithium(uid.PublicKey, signed, req.Signature) {
+		return validation.WrapValidationError(
+			validation.ErrCodeInvalidSignature,
+			"signature does not match submitter",
+			validation.ErrInvalidSignature,
+		)
+	}
+	return nil
 }
 
 func (s *Server) WaitForAnchor(ctx context.Context, req *pb.WaitRequest) (*pb.AnchorProof, error) {
@@ -142,12 +215,22 @@ func (s *Server) GetBlock(ctx context.Context, req *pb.BlockRequest) (*pb.Block,
 
 	pbEntries := make([]*pb.ProvenanceEntry, len(b.Anchored))
 	for i, e := range b.Anchored {
-		pbEntries[i] = &pb.ProvenanceEntry{
+		pbe := &pb.ProvenanceEntry{
 			Hash:      e.Hash[:],
 			Submitter: e.Submitter,
 			Timestamp: e.Timestamp,
 			Label:     e.Label,
 		}
+		if len(e.Approver) > 0 {
+			pbe.Approver = e.Approver
+		}
+		if len(e.Reference) > 0 {
+			pbe.Reference = e.Reference
+		}
+		if len(e.Signature) > 0 {
+			pbe.Signature = e.Signature
+		}
+		pbEntries[i] = pbe
 	}
 
 	pbTriad := make([][]byte, 3)

@@ -87,26 +87,32 @@ Gleipnir is designed to work in two modes:
 - **Embedded**: `consensus.NewEngine(node, interval)` — runs inside your process. Import `github.com/had-nu/gleipnir/pkg/consensus`. No gRPC needed.
 - **Sidecar**: `provenanced` daemon with gRPC API. Connect via `client.New()` for remote anchoring.
 
-### Current status: F1–F6 + G1–G6 + I1–I4 complete
+### Current status: F1–F6 + G1–G6 (legacy) + PG1–PG6 (protocol gaps) + I1–I4 complete
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| **F1** | Multi-node gossip (`MemoryBus`), `NewEngineWithPeers`, proposer/verifier cycle | ✅ |
-| **F2** | Kyber1024 KEM (`pkg/identity/kyber.go`) | ✅ |
-| **F3** | `pkg/transport` SecureConn — Kyber handshake + ChaCha20-Poly1305 AEAD with random nonces, HKDF(sorted peer IDs) | ✅ |
-| **F4** | `SubChainManager` — per-service SMT + anchor lifecycle (`Register`, `Submit`, `Anchor`, `Prove`, `VerifyCrossChain`) | ✅ |
-| **F5** | API hardening — `pkg/consensus/api.go`: validation, rate limits, panic recovery, `Stop()`/`SetAPILimits()` | ✅ |
-| **F6** | Contract-derived UID0 — `pkg/identity/contract.go`: `ContractHash`, `NewUIDZeroFromContract` (DRBG-seeded Dilithium), `ContractOf` | ✅ |
-| **G1** | Protobuf init panic resolved — compatible versions pinned, files regenerated | ✅ |
-| **G2** | Peer discovery + real transport — `pkg/transport/p2p/gossip.go`: libp2p GossipSub + mDNS, bootstrap peers | ✅ |
-| **G3** | Persistence — `pkg/storage/`: BoltDB `EngineStorage`, `SetStorage()`, auto-persist on `Stop()`/`RunCycle()` | ✅ |
-| **G4** | Exported validation — `pkg/validation/`: `ValidateEntry`, `IsZeroHash`, error codes (`ValidationError`) | ✅ |
-| **G5** | Rate limiter fix — `pkg/consensus/ratelimit.go`: sliding window + LRU eviction (bounded memory) | ✅ |
-| **G6** | SMT depth configurable — `state.Config.SMTDepth` (default 256), used by engine + sub-chains | ✅ |
-| **I1** | ECVRF leader election (Ristretto255, RFC 9381) — `pkg/identity/vrf.go` + wired in `triad.go` | ✅ |
-| **I2** | Kyber1024 KEM — `pkg/identity/kyber.go` used in `pkg/transport/secure_conn.go` | ✅ |
-| **I3** | M-of-N BFT quorum — `pkg/consensus/quorum.go` with duplicate-signature defense, flexible `Sigs`/`Validators` | ✅ |
-| **I4** | Power iteration for λ₁ — `pkg/state/power_iter.go` (Cholesky shift-invert, EigenSym fallback) | ✅ |
+| **F1** | Multi-node gossip (`MemoryBus`), `NewEngineWithPeers`, proposer/verifier cycle | [x] |
+| **F2** | Kyber1024 KEM (`pkg/identity/kyber.go`) | [x] |
+| **F3** | `pkg/transport` SecureConn — Kyber handshake + ChaCha20-Poly1305 AEAD with random nonces, HKDF(sorted peer IDs) | [x] |
+| **F4** | `SubChainManager` — per-service SMT + anchor lifecycle (`Register`, `Submit`, `Anchor`, `Prove`, `VerifyCrossChain`) | [x] |
+| **F5** | API hardening — `pkg/consensus/api.go`: validation, rate limits, panic recovery, `Stop()`/`SetAPILimits()` | [x] |
+| **F6** | Contract-derived UID0 — `pkg/identity/contract.go`: `ContractHash`, `NewUIDZeroFromContract` (DRBG-seeded Dilithium), `ContractOf` | [x] |
+| **G1** | Protobuf init panic resolved — compatible versions pinned, files regenerated | [x] |
+| **G2** | Peer discovery + real transport — `pkg/transport/p2p/gossip.go`: libp2p GossipSub + mDNS, bootstrap peers | [x] |
+| **G3** | Persistence — `pkg/storage/`: BoltDB `EngineStorage`, `SetStorage()`, auto-persist on `Stop()`/`RunCycle()` | [x] |
+| **G4** | Exported validation — `pkg/validation/`: `ValidateEntry`, `IsZeroHash`, error codes (`ValidationError`) | [x] |
+| **G5** | Rate limiter fix — `pkg/consensus/ratelimit.go`: sliding window + LRU eviction (bounded memory) | [x] |
+| **G6** | SMT depth configurable — `state.Config.SMTDepth` (default 256), used by engine + sub-chains | [x] |
+| **I1** | ECVRF leader election (Ristretto255, RFC 9381) — `pkg/identity/vrf.go` + wired in `triad.go` | [x] |
+| **I2** | Kyber1024 KEM — `pkg/identity/kyber.go` used in `pkg/transport/secure_conn.go` | [x] |
+| **I3** | M-of-N BFT quorum — `pkg/consensus/quorum.go` with duplicate-signature defense, flexible `Sigs`/`Validators` | [x] |
+| **I4** | Power iteration for λ₁ — `pkg/state/power_iter.go` (Cholesky shift-invert, EigenSym fallback) | [x] |
+| **PG1** | `ProvenanceEntry` gains `Approver` field for split-authority submissions | [x] |
+| **PG2** | `ProvenanceEntry` gains `Reference` field for cross-entry linking | [x] |
+| **PG3** | `SubmitHash` gRPC endpoint requires Dilithium3 client authentication | [x] |
+| **PG4** | Per-entry Dilithium3 signature (`ProvenanceEntry.Signature`) for non-repudiation | [x] |
+| **PG5** | Gate-consumer implementation guidance in PROTOCOL.md §11 | [x] |
+| **PG6** | Custody separation documented as deployment requirement | [x] |
 
 What you get today:
 - **Multi-node consensus**: N-node gossip-based cycle with ECVRF proposer selection, verified SMT root replication, M-of-N quorum
@@ -122,6 +128,11 @@ What you get today:
 - **Client validation**: `pkg/validation` exports `ValidateEntry`, `IsZeroHash`, and machine-readable error codes (`ValidationError` with `Code` field) for programmatic handling
 - **Bounded rate limiting**: sliding-window per-submitter limiter with LRU eviction (max 10k tracked submitters); no unbounded map growth
 - **Power iteration for λ₁**: optional shift-invert power iteration on the Laplacian with Cholesky factorization; falls back to dense EigenSym when convergence fails or n < 20
+- **gRPC client authentication**: `SubmitHash` requires Dilithium3 signature from caller; server validates against registered RootID (PG3)
+- **Multi-identity entries**: `ProvenanceEntry.Approver` for split-authority submissions (PG1)
+- **Cross-entry linking**: `ProvenanceEntry.Reference` for related-entry chaining (PG2)
+- **Per-entry non-repudiation**: `ProvenanceEntry.Signature` carries Dilithium3 signature binding submitter (and approver) to entry content (PG4)
+- **Gate-consumer guidance**: PROTOCOL.md §11 documents fail-closed patterns, timeouts, custody separation (PG5/PG6)
 
 ---
 
@@ -189,7 +200,7 @@ Engine.Start()
 | Type | Fields | Purpose |
 |------|--------|---------|
 | `Block` | Index, PrevHash, Proposer, Anchored entries, StateRoot, Lambda1, Timestamp, Sigs, BlockHash | Atomic unit of the chain |
-| `ProvenanceEntry` | Hash [32]byte, Submitter, Timestamp, Label | A single anchored hash |
+| `ProvenanceEntry` | Hash [32]byte, Submitter, Timestamp, Label, Approver, Reference, Signature | A single anchored hash. Approver (OPTIONAL) for split-authority submissions; Reference (OPTIONAL) for cross-entry linking; Signature (OPTIONAL) for per-entry non-repudiation |
 | `AnchorProof` | Found, BlockIndex, BlockTime, StateRoot, SMTProof, Submitter, Label | Verification output |
 | `NetworkHealth` | Lambda1, ActivePeers, TotalPeers, BlockHeight, PendingHashes | Engine status |
 | `Ticket` | Hash, Status, BlockIndex | Acknowledge a submission |
@@ -349,6 +360,16 @@ Block {
     Quorum:    QuorumConfig        ← {TotalValidators, RequiredSigs}
     BlockHash: []byte              ← sha256 of all above (minus BlockHash)
 }
+
+ProvenanceEntry {
+    Hash:      [32]byte   ← anchored hash
+    Submitter: []byte     ← who submitted
+    Timestamp: int64      ← submission time
+    Label:     string     ← human-readable label (OPTIONAL)
+    Approver:  []byte     ← who approved (OPTIONAL, G1)
+    Reference: []byte     ← related entry hash (OPTIONAL, G2)
+    Signature: []byte     ← Dilithium3 signature (OPTIONAL, G4)
+}
 ```
 
 ### Identity serialization (CBOR)
@@ -391,14 +412,36 @@ func (d *CustomDriver) Close() error
 Import and use without gRPC (single-node mode — see [issue #5](https://github.com/had-nu/gleipnir/issues/5)):
 
 ```go
-import "github.com/had-nu/gleipnir/pkg/consensus"
+import (
+    "context"
+    "time"
+    "github.com/had-nu/gleipnir/pkg/consensus"
+    "github.com/had-nu/gleipnir/pkg/identity"
+)
 
-uid := identity.NewUIDZero("my-node", true)
-eng := consensus.NewEngine(consensus.Node{UID: *uid}, 3*time.Second)
-eng.Start()
-eng.Submit(ctx, hash, uid.RootID, "my-label")
-proof, _ := eng.WaitForAnchor(ctx, hash)
-eng.Close()
+// Gate-consumer pattern: fail closed on timeout/error.
+func anchorArtifact(hash [32]byte) error {
+    uid := identity.NewUIDZero("my-node", true)
+    eng := consensus.NewEngine(consensus.Node{UID: *uid}, 3*time.Second)
+    eng.Start()
+    defer eng.Close()
+
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+
+    ticket, err := eng.Submit(ctx, hash, uid.RootID, "my-label")
+    if err != nil {
+        return fmt.Errorf("blocking release — submit failed: %w", err)
+    }
+    proof, err := eng.WaitForAnchor(ctx, ticket.Hash)
+    if err != nil {
+        return fmt.Errorf("blocking release — anchor failed: %w", err)
+    }
+    if !proof.Found {
+        return fmt.Errorf("blocking release — hash not anchored")
+    }
+    return nil
+}
 ```
 
 ### 3. Adding new consensus rules
@@ -492,9 +535,10 @@ adversarial test coverage must all be confirmed before marking an issue done.
 
 | Limitation | Impact | Issue | Status |
 |------------|--------|-------|--------|
-| ECVRF leader election implemented (Ristretto255, RFC 9381) | Grinding-resistant proposer selection | [#1](https://github.com/had-nu/gleipnir/issues/1) | ✅ Resolved |
+| ECVRF leader election implemented (Ristretto255, RFC 9381) | Grinding-resistant proposer selection | [#1](https://github.com/had-nu/gleipnir/issues/1) | [x] Resolved |
 | Kyber1024 KEM and ChaCha20-Poly1305 transport implemented but not wired into automatic peer discovery | Must manually configure peer keys | [#2](https://github.com/had-nu/gleipnir/issues/2) | Resolved |
-| M-of-N BFT quorum implemented (flexible threshold, duplicate-signature defense) | Configurable fault tolerance | [#3](https://github.com/had-nu/gleipnir/issues/3) | ✅ Resolved |
-| Eigendecomposition O(n³) per λ₁ recomputation mitigated by power iteration + LambdaInterval | Scales to 100+ peers | [#4](https://github.com/had-nu/gleipnir/issues/4) | ✅ Mitigated |
+| M-of-N BFT quorum implemented (flexible threshold, duplicate-signature defense) | Configurable fault tolerance | [#3](https://github.com/had-nu/gleipnir/issues/3) | [x] Resolved |
+| Eigendecomposition O(n³) per λ₁ recomputation mitigated by power iteration + LambdaInterval | Scales to 100+ peers | [#4](https://github.com/had-nu/gleipnir/issues/4) | [x] Mitigated |
 | Sub-chain registry lacks automatic periodic anchoring | Manual `Anchor()` call required | — | Open |
 | Transport test `TestEncryptedExchange` has intermittent EOF | Nonce or framing edge case under concurrent read/write | — | Investigate |
+| Custody separation for IPC signing keys is not documented as a deployment requirement | Operators may co-locate IPC keys with CI/CD credentials, increasing blast radius | — | Open |

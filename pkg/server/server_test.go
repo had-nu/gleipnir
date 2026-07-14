@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/binary"
 	"net"
 	"testing"
 	"time"
@@ -50,6 +51,17 @@ func newTestServer(t *testing.T) (*Server, pb.ProvenanceAnchorClient, func()) {
 	return srv, client, cleanup
 }
 
+func signSubmitRequest(uid *identity.UIDZeroSoulbound, hash, submitter []byte, ts int64, label string) []byte {
+	tsLE := make([]byte, 8)
+	binary.LittleEndian.PutUint64(tsLE, uint64(ts))
+	signed := make([]byte, 0, len(hash)+len(submitter)+len(tsLE)+len(label))
+	signed = append(signed, hash...)
+	signed = append(signed, submitter...)
+	signed = append(signed, tsLE...)
+	signed = append(signed, label...)
+	return identity.SignDilithium(uid.SecretKey, signed)
+}
+
 func TestServerHealth(t *testing.T) {
 	_, client, cleanup := newTestServer(t)
 	defer cleanup()
@@ -71,25 +83,31 @@ func TestServerHealth(t *testing.T) {
 }
 
 func TestServerSubmitAndVerify(t *testing.T) {
-	_, client, cleanup := newTestServer(t)
+	uid := identity.NewUIDZero("test-server", true)
+	srv, client, cleanup := newTestServer(t)
 	defer cleanup()
+
+	srv.keys[uid.ID()] = uid
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	hash := sha256.Sum256([]byte("test-entry"))
+	ts := time.Now().UnixNano()
+	sig := signSubmitRequest(uid, hash[:], uid.RootID, ts, "test")
 
 	submitResp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
 		Hash:      hash[:],
-		Submitter: []byte("test-submitter"),
+		Submitter: uid.RootID,
 		Label:     "test",
-		Timestamp: time.Now().UnixNano(),
+		Timestamp: ts,
+		Signature: sig,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !submitResp.Accepted {
-		t.Fatal("submit should be accepted")
+		t.Fatalf("submit should be accepted, got: %s", submitResp.Status)
 	}
 
 	time.Sleep(4 * time.Second)
@@ -138,6 +156,182 @@ func TestServerVerifyNotFound(t *testing.T) {
 	}
 	if resp.Found {
 		t.Fatal("random hash should not be found")
+	}
+}
+
+func TestGrpcSubmitHashRejectsUnauthenticated(t *testing.T) {
+	_, client, cleanup := newTestServer(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	hash := sha256.Sum256([]byte("test-entry"))
+
+	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
+		Hash:      hash[:],
+		Submitter: []byte("unknown-submitter"),
+		Timestamp: time.Now().UnixNano(),
+		Label:     "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted {
+		t.Fatal("unauthenticated submit should be rejected")
+	}
+}
+
+func TestGrpcSubmitHashRejectsBadSignature(t *testing.T) {
+	uid := identity.NewUIDZero("test-client", true)
+	_, client, cleanup := newTestServer(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	hash := sha256.Sum256([]byte("test-entry"))
+	ts := time.Now().UnixNano()
+	wrongUID := identity.NewUIDZero("wrong-key", true)
+	sig := signSubmitRequest(wrongUID, hash[:], uid.RootID, ts, "test")
+
+	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
+		Hash:      hash[:],
+		Submitter: uid.RootID,
+		Timestamp: ts,
+		Label:     "test",
+		Signature: sig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted {
+		t.Fatal("submit with bad signature should be rejected")
+	}
+}
+
+func TestGrpcSubmitHashSubmitterMismatch(t *testing.T) {
+	clientUID := identity.NewUIDZero("test-client", true)
+	_, client, cleanup := newTestServer(t)
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	hash := sha256.Sum256([]byte("test-entry"))
+	ts := time.Now().UnixNano()
+	sig := signSubmitRequest(clientUID, hash[:], clientUID.RootID, ts, "test")
+
+	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
+		Hash:      hash[:],
+		Submitter: clientUID.RootID,
+		Timestamp: ts,
+		Label:     "test",
+		Signature: sig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Accepted {
+		t.Fatal("submit from unknown identity should be rejected as submitter mismatch")
+	}
+}
+
+func TestGrpcSubmitHashAuthenticated(t *testing.T) {
+	srv, client, cleanup := newTestServer(t)
+	defer cleanup()
+
+	// Use the server's own identity which is already registered in srv.keys
+	var uid *identity.UIDZeroSoulbound
+	for _, v := range srv.keys {
+		uid = v
+		break
+	}
+	if uid == nil {
+		t.Fatal("server has no registered identity")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	hash := sha256.Sum256([]byte("test-entry"))
+	ts := time.Now().UnixNano()
+	sig := signSubmitRequest(uid, hash[:], uid.RootID, ts, "test-auth")
+
+	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
+		Hash:      hash[:],
+		Submitter: uid.RootID,
+		Timestamp: ts,
+		Label:     "test-auth",
+		Signature: sig,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Accepted {
+		t.Fatalf("authenticated submit should be accepted, got: %s", resp.Status)
+	}
+
+	time.Sleep(4 * time.Second)
+
+	verifyResp, err := client.VerifyHash(ctx, &pb.VerifyRequest{Hash: hash[:]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verifyResp.Found {
+		t.Fatal("hash should be found after authenticated submit and cycle")
+	}
+	if verifyResp.Label != "test-auth" {
+		t.Fatalf("expected label test-auth, got %s", verifyResp.Label)
+	}
+}
+
+func TestGrpcSubmitHashWithApproverAndReference(t *testing.T) {
+	srv, client, cleanup := newTestServer(t)
+	defer cleanup()
+
+	var uid *identity.UIDZeroSoulbound
+	for _, v := range srv.keys {
+		uid = v
+		break
+	}
+	if uid == nil {
+		t.Fatal("server has no registered identity")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	hash := sha256.Sum256([]byte("test-approver-entry"))
+	ts := time.Now().UnixNano()
+	sig := signSubmitRequest(uid, hash[:], uid.RootID, ts, "test-approver")
+	approver := identity.NewUIDZero("approver-uid", true)
+	refHash := sha256.Sum256([]byte("related-entry"))
+
+	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
+		Hash:      hash[:],
+		Submitter: uid.RootID,
+		Timestamp: ts,
+		Label:     "test-approver",
+		Signature: sig,
+		Approver:  approver.RootID,
+		Reference: refHash[:],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !resp.Accepted {
+		t.Fatalf("authenticated submit with approver should be accepted, got: %s", resp.Status)
+	}
+
+	time.Sleep(4 * time.Second)
+
+	verifyResp, err := client.VerifyHash(ctx, &pb.VerifyRequest{Hash: hash[:]})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !verifyResp.Found {
+		t.Fatal("hash should be found after authenticated submit with approver")
 	}
 }
 

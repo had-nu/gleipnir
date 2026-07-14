@@ -476,12 +476,22 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 
 	entries := make([]map[string]interface{}, len(block.Anchored))
 	for i, e := range block.Anchored {
-		entries[i] = map[string]interface{}{
+		entry := map[string]interface{}{
 			"hash":      hex.EncodeToString(e.Hash[:]),
 			"submitter": string(e.Submitter),
 			"timestamp": e.Timestamp,
 			"label":     e.Label,
 		}
+		if len(e.Approver) > 0 {
+			entry["approver"] = string(e.Approver)
+		}
+		if len(e.Reference) > 0 {
+			entry["reference"] = hex.EncodeToString(e.Reference)
+		}
+		if len(e.Signature) > 0 {
+			entry["signature"] = hex.EncodeToString(e.Signature)
+		}
+		entries[i] = entry
 	}
 
 	sigs := make([]string, len(block.Sigs))

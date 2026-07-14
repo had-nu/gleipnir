@@ -53,6 +53,9 @@ As **sub-chains** estendem o modelo: cada serviço tem a sua própria cadeia de 
 - **Validação de cliente** — `ValidateEntry`, `IsZeroHash`, códigos de erro legíveis por máquina (ver `pkg/validation`)
 - **Rate limiting limitado** — sliding-window por submissor com evicção LRU (ver `pkg/consensus/ratelimit.go`)
 - **UID0 derivado de contrato** — identidade determinística ligada ao hash de um contrato empresarial (ver `pkg/identity/contract.go`)
+- **Autenticação gRPC** — `SubmitHash` exige assinatura Dilithium3 do caller verificada contra RootID registado
+- **Entradas multi-identidade** — campo `Approver` para autorização dividida, campo `Reference` para ligação entre entradas
+- **Não-repúdio por entrada** — assinatura Dilithium3 em cada `ProvenanceEntry` vinculando submissor e aprovador ao conteúdo ancorado
 
 ## Narrativa de compliance
 
@@ -64,7 +67,7 @@ As **sub-chains** estendem o modelo: cada serviço tem a sua própria cadeia de 
 | **Sparse Merkle Tree (SMT)** | Cada bloco compromete-se com uma raiz de estado verificável. Um cliente pode solicitar uma prova compacta de que um hash específico foi incluído — e qualquer terceiro pode verificar essa prova contra a cadeia pública. |
 | **Sub-chains + provas cross-chain** | Cada serviço tem a sua própria cadeia isolada, com checkpoint periódico na cadeia principal. Um auditor vê evidência por serviço mais uma ligação criptográfica à linha temporal global. |
 | **Identidade UID0 vinculada a contrato** | Cada nó validador está criptograficamente ligado ao hash de um contrato empresarial — o nó fala pela entidade legal, não por uma chave anónima. |
-| **Ancoragem de decisões** | Cada entrada ancorada inclui a identidade do submissor e um rótulo legível por humanos. Um auditor pode rastrear um artefacto específico até à pessoa ou sistema que o submeteu, o momento da submissão e o bloco que o finalizou — estabelecendo uma cadeia de custódia criptograficamente verificável desde a decisão até à implementação. |
+| **Ancoragem de decisões** | Cada entrada ancorada inclui a identidade do submissor, opcionalmente a identidade de um aprovador para decisões com autorização dividida, uma referência a entradas relacionadas para decisões em cadeia, e uma assinatura Dilithium3 por entrada para não-repúdio. Um auditor pode rastrear um artefacto até à pessoa ou sistema que o submeteu (e aprovou), ligado a evidência relacionada, com prova criptográfica vinculando cada identidade ao conteúdo da entrada. |
 | **Auto-supervisão Laplaciana** | A rede monitoriza a sua própria saúde através de valores próprios de difusão. Um auditor pode verificar que a rede estava operacional nos momentos reclamados, não apenas que os blocos existem. |
 
 ## Como funciona
@@ -116,23 +119,17 @@ Consulte [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) para a descrição arquite
 
 ## Estado atual
 
-O `RunCycle()` suporta modos **single-node** (`NewEngine`) e **multi-node** (`NewEngineWithPeers` + `GossipChannel`). O caminho multi-node usa seleção de proponente ECVRF, constrói blocos via gossip, verifica replicação da raiz SMT e recolhe co-assinaturas M-de-N Dilithium3. As sub-chains (`SubChainManager`) permitem ancoragem por serviço com provas cross-chain. A camada de transporte (`pkg/transport`) fornece canais AEAD autenticados por KEM (Kyber1024 + ChaCha20-Poly1305).
+O `RunCycle()` suporta modos **single-node** (`NewEngine`) e **multi-node** (`NewEngineWithPeers` + `GossipChannel`). O caminho multi-node usa seleção de proponente ECVRF, constrói blocos via gossip, verifica replicação da raiz SMT e recolhe co-assinaturas M-de-N Dilithium3. As sub-chains (`SubChainManager`) permitem ancoragem por serviço com provas cross-chain.
 
-**Issues #1–4 resolvidas** (I1–I4):
-- **Eleição de líder ECVRF**: VRF Ristretto255 (RFC 9381) — cada par prova a seleção de proponente com uma prova criptográfica verificável e imprevisível; resistente a grinding
-- **Quórum BFT M-de-N**: limiar configurável (1/1 single-node, 3/3 ou superior multi-node); ataque de assinatura duplicada rejeitado (cada signatário distinto contado uma vez)
-- **Kyber1024 KEM**: usado em `pkg/transport/secure_conn.go` para canais peer-to-peer encriptados
-- **Power iteration para λ₁**: power iteration shift-invert com fatorização de Cholesky; fallback para EigenSym denso em matrizes pequenas ou sem convergência
+O `SubmitHash` gRPC exige autenticação Dilithium3 — cada pedido leva uma assinatura do caller verificada contra um RootID registado. As entradas suportam submissão com autorização dividida (campo `Approver`) e ligação entre entradas (`Reference`). Cada `ProvenanceEntry` pode levar uma assinatura Dilithium3 por entrada para não-repúdio, vinculando o submissor (e aprovador) ao conteúdo ancorado.
 
-**Também completo** (G1–G6):
-- **API gRPC**: pânico de inicialização protobuf resolvido; testes do servidor passam (`pkg/server`)
-- **Transporte P2P**: libp2p GossipSub + descoberta mDNS (`pkg/transport/p2p`)
-- **Persistência**: `EngineStorage` em BoltDB carrega automaticamente no init, guarda automaticamente em `Stop()` e `RunCycle()` (`pkg/storage`)
-- **Validação de cliente**: `pkg/validation` exporta `ValidateEntry`, `IsZeroHash`, `ValidationError` com códigos
-- **Rate limiting**: sliding-window por submissor com evicção LRU (sem fugas de memória) (`pkg/consensus/ratelimit.go`)
-- **Profundidade SMT**: configurável via `state.Config.SMTDepth` (padrão 256), usado pelo engine e sub-chains
+**Consenso** — Eleição de líder ECVRF (Ristretto255, RFC 9381, resistente a grinding) com quórum M-de-N Dilithium3 configurável. Ataque de assinatura duplicada rejeitado (cada signatário distinto contado uma vez).
 
-A API de submissão está robusta (`pkg/consensus/api.go`): `Enqueue` valida entradas e impõe rate limits, `RunCycle` recupera de panics, e `Engine.Stop` interrompe a ingestão de forma limpa. A identidade raiz UID0 pode ser derivada deterministicamente do hash de um contrato empresarial (`pkg/identity/contract.go`), fornecendo uma ligação verificável "nó fala pelo contrato X".
+**Transporte** — Canais AEAD autenticados por KEM via Kyber1024 + ChaCha20-Poly1305, com descoberta de pares libp2p GossipSub + mDNS (`pkg/transport/p2p`). Persistência BoltDB (`pkg/storage`), rate limiting sliding-window com evicção LRU (`pkg/consensus/ratelimit.go`), e power iteration para λ₁ com fallback para EigenSym denso (`pkg/state`).
+
+**Identidade** — Tokens UID0 soulbound com derivação baseada em contrato (`pkg/identity/contract.go`). `NewUIDZeroFromContract` determinístico vincula um nó a uma entidade legal.
+
+**API de submissão** — `Enqueue` valida entradas (rejeita hashes nulos, submitters vazios, labels grandes) e impõe rate limits; `RunCycle` recupera de panics; `Engine.Stop` interrompe a ingestão de forma limpa.
 
 ## Stack
 

@@ -79,6 +79,46 @@ func TestIsZeroHash(t *testing.T) {
 	}
 }
 
+func TestErrorCodes(t *testing.T) {
+	if ErrCodeInvalidSignature != "INVALID_SIGNATURE" {
+		t.Fatalf("expected INVALID_SIGNATURE, got %s", ErrCodeInvalidSignature)
+	}
+	if ErrCodeSubmitterMismatch != "SUBMITTER_MISMATCH" {
+		t.Fatalf("expected SUBMITTER_MISMATCH, got %s", ErrCodeSubmitterMismatch)
+	}
+	if ErrInvalidSignature.Error() != "invalid signature: signature verification failed" {
+		t.Fatalf("unexpected ErrInvalidSignature message: %s", ErrInvalidSignature.Error())
+	}
+	if ErrUnknownSubmitter.Error() != "unknown submitter: submitter not registered" {
+		t.Fatalf("unexpected ErrUnknownSubmitter message: %s", ErrUnknownSubmitter.Error())
+	}
+}
+
+func TestValidateEntryInvalidSignature(t *testing.T) {
+	err := WrapValidationError(ErrCodeInvalidSignature, "signature verification failed", ErrInvalidSignature)
+	code, ok := FromError(err)
+	if !ok {
+		t.Fatal("expected ValidationError")
+	}
+	if code != ErrCodeInvalidSignature {
+		t.Fatalf("expected %s, got %s", ErrCodeInvalidSignature, code)
+	}
+	if err.Error() != "signature verification failed: invalid signature: signature verification failed" {
+		t.Fatalf("unexpected error message: %s", err.Error())
+	}
+}
+
+func TestValidateEntrySubmitterMismatch(t *testing.T) {
+	err := WrapValidationError(ErrCodeSubmitterMismatch, "unknown submitter", ErrUnknownSubmitter)
+	code, ok := FromError(err)
+	if !ok {
+		t.Fatal("expected ValidationError")
+	}
+	if code != ErrCodeSubmitterMismatch {
+		t.Fatalf("expected %s, got %s", ErrCodeSubmitterMismatch, code)
+	}
+}
+
 func TestDefaultAPILimits(t *testing.T) {
 	limits := DefaultAPILimits()
 	if limits.MaxLabelLen != 256 {

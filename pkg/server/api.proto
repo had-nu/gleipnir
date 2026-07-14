@@ -15,11 +15,13 @@ service ProvenanceAnchor {
 }
 
 message SubmitRequest {
-  bytes  hash      = 1;
-  bytes  submitter = 2;
-  bytes  signature = 3;
-  int64  timestamp = 4;
-  string label     = 5;
+  bytes  hash       = 1;
+  bytes  submitter  = 2;
+  bytes  signature  = 3;
+  int64  timestamp  = 4;
+  string label      = 5;
+  bytes  approver   = 6;
+  bytes  reference  = 7;
 }
 
 message SubmitResponse {
@@ -27,6 +29,7 @@ message SubmitResponse {
   string status        = 2;
   uint64 block_index   = 3;
   int64  block_time    = 4;
+  string error_code    = 5;
 }
 
 message WaitRequest {
@@ -89,8 +92,11 @@ message Block {
 }
 
 message ProvenanceEntry {
-  bytes  hash      = 1;
-  bytes  submitter = 2;
-  int64  timestamp = 3;
-  string label     = 4;
+  bytes  hash       = 1;
+  bytes  submitter  = 2;
+  int64  timestamp  = 3;
+  string label      = 4;
+  bytes  approver   = 5;
+  bytes  reference  = 6;
+  bytes  signature  = 7;
 }

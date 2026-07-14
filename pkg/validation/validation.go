@@ -13,6 +13,12 @@ var ErrInvalidHash = errors.New("invalid hash: all-zero hash not allowed")
 // ErrInvalidSubmitter is returned when the submitter is empty.
 var ErrInvalidSubmitter = errors.New("invalid submitter: empty submitter not allowed")
 
+// ErrInvalidSignature is returned when the entry signature is invalid or missing.
+var ErrInvalidSignature = errors.New("invalid signature: signature verification failed")
+
+// ErrUnknownSubmitter is returned when the submitter identity is not recognised.
+var ErrUnknownSubmitter = errors.New("unknown submitter: submitter not registered")
+
 // ErrLabelTooLong is returned when the label exceeds the maximum length.
 var ErrLabelTooLong = errors.New("label too long: max 256 bytes")
 
@@ -66,6 +72,8 @@ func IsZeroHash(hash [32]byte) bool {
 const (
 	ErrCodeInvalidHash       = "INVALID_HASH"
 	ErrCodeInvalidSubmitter  = "INVALID_SUBMITTER"
+	ErrCodeInvalidSignature  = "INVALID_SIGNATURE"
+	ErrCodeSubmitterMismatch = "SUBMITTER_MISMATCH"
 	ErrCodeLabelTooLong      = "LABEL_TOO_LONG"
 	ErrCodeRateLimited       = "RATE_LIMITED"
 	ErrCodeEngineStopped     = "ENGINE_STOPPED"
