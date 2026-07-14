@@ -1,0 +1,15 @@
+# IPC Conformance Test overlay
+# Usage: docker compose -f docker-compose.yml -f docker-compose.test.yml up --detach --build --wait
+#        docker compose -f docker-compose.yml -f docker-compose.test.yml run --rm conformance-test
+services:
+  conformance-test:
+    build: .
+    entrypoint:
+      - conformance-test
+      - --target=val-1:50051
+      - --uid-file=/uids/uid-1.cbor
+      - --timeout=120s
+    networks: [ipc-net]
+    volumes:
+      - uids:/uids
+    profiles: ["test"]

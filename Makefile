@@ -45,3 +45,21 @@ docker-logs:
 
 docker-ps:
 	docker compose ps
+
+docker-conformance:
+	docker compose -f docker-compose.yml -f docker-compose.test.yml up --detach --build
+	@echo "Waiting for validators..."
+	@for i in $$(seq 1 30); do \
+		if docker compose -f docker-compose.yml -f docker-compose.test.yml logs val-1 2>/dev/null | grep -q "listening"; then \
+			break; \
+		fi; \
+		sleep 1; \
+	done
+	@echo "Running conformance test..."
+	docker compose -f docker-compose.yml -f docker-compose.test.yml run --build --rm conformance-test; \
+	EXIT_CODE=$$?; \
+	docker compose -f docker-compose.yml -f docker-compose.test.yml down -v; \
+	exit $$EXIT_CODE
+
+docker-conformance-clean:
+	docker compose -f docker-compose.yml -f docker-compose.test.yml --profile test down -v

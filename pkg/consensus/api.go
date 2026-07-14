@@ -40,13 +40,13 @@ func (e *Engine) apiLimitsLocked() APILimits {
 
 func validateEntry(hash [32]byte, submitter []byte, label string, cfg APILimits) error {
 	if validation.IsZeroHash(hash) {
-		return ErrInvalidHash
+		return validation.WrapValidationError(validation.ErrCodeInvalidHash, "invalid hash", ErrInvalidHash)
 	}
 	if len(submitter) == 0 {
-		return ErrInvalidSubmitter
+		return validation.WrapValidationError(validation.ErrCodeInvalidSubmitter, "invalid submitter", ErrInvalidSubmitter)
 	}
 	if len(label) > cfg.MaxLabelLen {
-		return ErrLabelTooLong
+		return validation.WrapValidationError(validation.ErrCodeLabelTooLong, "label too long", ErrLabelTooLong)
 	}
 	return nil
 }

@@ -420,19 +420,19 @@ func (e *Engine) RunCycle() {
 				proofBytes = append(proofBytes, p[:]...)
 			}
 			stateRootArr := e.st.Root()
-			e.anchored[h] = &chain.AnchorProof{
-				Found:      true,
-				BlockIndex: cycle,
-				BlockTime:  block.Timestamp,
-				StateRoot:  stateRootArr[:],
-				SMTProof:   proofBytes,
-				Submitter:  entries[i].Submitter,
-				Label:      entries[i].Label,
-			}
+		e.anchored[h] = &chain.AnchorProof{
+			Found:      true,
+			BlockIndex: uint64(len(e.blocks)),
+			BlockTime:  block.Timestamp,
+			StateRoot:  stateRootArr[:],
+			SMTProof:   proofBytes,
+			Submitter:  entries[i].Submitter,
+			Label:      entries[i].Label,
 		}
+	}
 
-		stateRootArr := e.st.Root()
-		block.StateRoot = stateRootArr[:]
+	stateRootArr := e.st.Root()
+	block.StateRoot = stateRootArr[:]
 		blockHash := computeBlockHash(block)
 		block.BlockHash = blockHash
 
@@ -473,7 +473,7 @@ func (e *Engine) RunCycle() {
 			stateRootArr := e.st.Root()
 			e.anchored[h] = &chain.AnchorProof{
 				Found:      true,
-				BlockIndex: cycle,
+				BlockIndex: uint64(len(e.blocks)),
 				BlockTime:  block.Timestamp,
 				StateRoot:  stateRootArr[:],
 				SMTProof:   proofBytes,

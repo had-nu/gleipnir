@@ -114,6 +114,9 @@ type ServerOption func(*Server) error
 
 func WithKeysDir(path string) ServerOption {
 	return func(s *Server) error {
+		if path == "" {
+			return nil
+		}
 		entries, err := os.ReadDir(path)
 		if err != nil {
 			return fmt.Errorf("read keys dir: %w", err)

@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -32,12 +33,12 @@ func TestSubmitValidation(t *testing.T) {
 	ctx := context.Background()
 
 	// Zero hash rejected
-	if _, err := eng.Submit(ctx, [32]byte{}, []byte("submitter"), "label"); err != ErrInvalidHash {
+	if _, err := eng.Submit(ctx, [32]byte{}, []byte("submitter"), "label"); 	!errors.Is(err, ErrInvalidHash) {
 		t.Fatalf("expected ErrInvalidHash, got %v", err)
 	}
 
 	// Empty submitter rejected
-	if _, err := eng.Submit(ctx, [32]byte{1}, []byte{}, "label"); err != ErrInvalidSubmitter {
+	if _, err := eng.Submit(ctx, [32]byte{1}, []byte{}, "label"); 	!errors.Is(err, ErrInvalidSubmitter) {
 		t.Fatalf("expected ErrInvalidSubmitter, got %v", err)
 	}
 
@@ -46,7 +47,7 @@ func TestSubmitValidation(t *testing.T) {
 	for i := range bigLabel {
 		bigLabel[i] = 'a'
 	}
-	if _, err := eng.Submit(ctx, [32]byte{1}, []byte("submitter"), string(bigLabel)); err != ErrLabelTooLong {
+	if _, err := eng.Submit(ctx, [32]byte{1}, []byte("submitter"), string(bigLabel)); 	!errors.Is(err, ErrLabelTooLong) {
 		t.Fatalf("expected ErrLabelTooLong, got %v", err)
 	}
 
@@ -60,10 +61,10 @@ func TestEnqueueValidation(t *testing.T) {
 	eng := apiEngine()
 	defer eng.Stop()
 
-	if err := eng.Enqueue(chainEntry([32]byte{}, []byte("s"), "l")); err != ErrInvalidHash {
+	if err := eng.Enqueue(chainEntry([32]byte{}, []byte("s"), "l")); 	!errors.Is(err, ErrInvalidHash) {
 		t.Fatalf("expected ErrInvalidHash, got %v", err)
 	}
-	if err := eng.Enqueue(chainEntry([32]byte{5}, nil, "l")); err != ErrInvalidSubmitter {
+	if err := eng.Enqueue(chainEntry([32]byte{5}, nil, "l")); 	!errors.Is(err, ErrInvalidSubmitter) {
 		t.Fatalf("expected ErrInvalidSubmitter, got %v", err)
 	}
 	if err := eng.Enqueue(chainEntry([32]byte{5}, []byte("s"), "l")); err != nil {
@@ -90,7 +91,7 @@ func TestRateLimitTotalPending(t *testing.T) {
 		}
 	}
 	// Next should be rate limited
-	if _, err := eng.Submit(ctx, [32]byte{99}, []byte("s"), "l"); err != ErrRateLimited {
+	if _, err := eng.Submit(ctx, [32]byte{99}, []byte("s"), "l"); 	!errors.Is(err, ErrRateLimited) {
 		t.Fatalf("expected ErrRateLimited, got %v", err)
 	}
 }
@@ -112,7 +113,7 @@ func TestRateLimitPerSubmitter(t *testing.T) {
 			t.Fatalf("submit %d failed: %v", i, err)
 		}
 	}
-	if _, err := eng.Submit(ctx, [32]byte{99}, []byte("alice"), "l"); err != ErrRateLimited {
+	if _, err := eng.Submit(ctx, [32]byte{99}, []byte("alice"), "l"); 	!errors.Is(err, ErrRateLimited) {
 		t.Fatalf("expected ErrRateLimited, got %v", err)
 	}
 	// Different submitter not affected by alice's cap

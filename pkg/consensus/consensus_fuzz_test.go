@@ -2,6 +2,7 @@ package consensus
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -64,7 +65,7 @@ func TestMalformedSubmissions(t *testing.T) {
 		var h [32]byte
 		h[0] = 1
 		_, err := eng.Submit(ctx, h, nil, "nil-submitter")
-		if err != ErrInvalidSubmitter {
+		if !errors.Is(err, ErrInvalidSubmitter) {
 			t.Fatalf("expected ErrInvalidSubmitter, got %v", err)
 		}
 	})
@@ -74,7 +75,7 @@ func TestMalformedSubmissions(t *testing.T) {
 		h[0] = 2
 		big := string(make([]byte, 1<<20)) // 1 MB label
 		_, err := eng.Submit(ctx, h, uid.RootID, big)
-		if err != ErrLabelTooLong {
+		if !errors.Is(err, ErrLabelTooLong) {
 			t.Fatalf("expected ErrLabelTooLong, got %v", err)
 		}
 	})
@@ -82,7 +83,7 @@ func TestMalformedSubmissions(t *testing.T) {
 	t.Run("zero hash rejected", func(t *testing.T) {
 		var zero [32]byte
 		_, err := eng.Submit(ctx, zero, uid.RootID, "zero-hash")
-		if err != ErrInvalidHash {
+		if !errors.Is(err, ErrInvalidHash) {
 			t.Fatalf("expected ErrInvalidHash, got %v", err)
 		}
 	})
