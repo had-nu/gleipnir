@@ -17,7 +17,9 @@
   <a href="README.md"><b>Read in English</b> &gt;</a>
 </p>
 
-Implementação de referência da **IPC (Immutable Provenance Chain)** — uma rede mínima e criptograficamente auditável para ancoragem de proveniência.
+Implementação de referência em Go do
+[**3CP** (Cryptographic Chain-of-Custody Protocol)](https://github.com/had-nu/3CP)
+— uma rede mínima e criptograficamente auditável para cadeia de custódia de decisões.
 
 ## Problema
 

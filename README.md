@@ -17,7 +17,9 @@
   <a href="README.pt.md"><b>Ler em Portugues</b> &gt;</a>
 </p>
 
-Reference implementation of **IPC (Immutable Provenance Chain)** — a minimal, cryptographically auditable provenance anchor network.
+Go reference implementation of the
+[**3CP** (Cryptographic Chain-of-Custody Protocol)](https://github.com/had-nu/3CP)
+— a minimal, cryptographically auditable chain-of-custody network.
 
 ## Problem
 
