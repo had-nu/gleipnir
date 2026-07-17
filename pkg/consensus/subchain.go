@@ -108,7 +108,9 @@ func (m *SubChainManager) Anchor(id chain.SubChainID) error {
 	for _, entry := range sc.pending {
 		var h [32]byte
 		copy(h[:], entry.Hash[:])
-		sc.st.Insert(h[:], entry.Hash[:])
+		if err := sc.st.Insert(h[:], entry.Hash[:]); err != nil {
+			return err
+		}
 	}
 	sc.pending = nil
 

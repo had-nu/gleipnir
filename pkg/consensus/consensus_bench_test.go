@@ -1,3 +1,4 @@
+//nolint:errcheck // benchmark assertions
 package consensus
 
 import (

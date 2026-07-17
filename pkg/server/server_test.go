@@ -1,3 +1,4 @@
+//nolint:errcheck // test assertions
 package server
 
 import (
@@ -32,7 +33,7 @@ func newTestServer(t *testing.T) (*Server, pb.ProvenanceAnchorClient, func()) {
 
 	go gs.Serve(lis)
 
-	conn, err := grpc.DialContext(context.Background(), "bufnet",
+	conn, err := grpc.NewClient("passthrough:///bufnet",
 		grpc.WithContextDialer(bufDialer(lis)),
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)

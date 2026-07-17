@@ -162,9 +162,7 @@ func p4CompliancePipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, ui
 	finding := scan.Findings[0] // HSTS missing on /login
 
 	var triggered []ComplianceMapping
-	for _, m := range complianceFixtures {
-		triggered = append(triggered, m)
-	}
+	triggered = append(triggered, complianceFixtures...)
 
 	// Anchor the compliance decision: finding_hash + control_ids
 	decisionPayload := sha256.Sum256(append(finding.Hash(), []byte(fmt.Sprintf("%v", triggered))...))
@@ -262,14 +260,6 @@ func submitAndWait(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *iden
 		return 0, fmt.Errorf("not found after WaitForAnchor")
 	}
 	return proof.BlockIndex, nil
-}
-
-func verifyAnchored(ctx context.Context, raw pb.ProvenanceAnchorClient, hash []byte) (bool, error) {
-	v, err := raw.VerifyHash(ctx, &pb.VerifyRequest{Hash: hash})
-	if err != nil {
-		return false, err
-	}
-	return v.Found, nil
 }
 
 func entryInBlock(ctx context.Context, raw pb.ProvenanceAnchorClient, blockIdx uint64, hash []byte) (bool, error) {

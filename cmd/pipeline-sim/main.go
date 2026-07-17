@@ -91,14 +91,14 @@ func envFlagDuration(env string, def time.Duration) time.Duration {
 func simulateOne(ctx context.Context, target, pipelineID string, seq uint64) {
 	hash := sha256.Sum256([]byte(fmt.Sprintf("%s-%d-%d", pipelineID, seq, time.Now().UnixNano())))
 
-	conn, err := grpc.Dial(target,
+	conn, err := grpc.NewClient(target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 	)
 	if err != nil {
 		totalErrors.Add(1)
 		return
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	client := pb.NewProvenanceAnchorClient(conn)
 	start := time.Now()

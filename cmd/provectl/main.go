@@ -39,7 +39,7 @@ var healthCmd = &cobra.Command{
 	Short: "Get node health status",
 	Run: func(_ *cobra.Command, _ []string) {
 		conn := dial()
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		client := pb.NewProvenanceAnchorClient(conn)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -65,7 +65,7 @@ var rootStateCmd = &cobra.Command{
 	Short: "Get current state root",
 	Run: func(_ *cobra.Command, _ []string) {
 		conn := dial()
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		client := pb.NewProvenanceAnchorClient(conn)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -97,7 +97,7 @@ var submitCmd = &cobra.Command{
 		}
 
 		conn := dial()
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		client := pb.NewProvenanceAnchorClient(conn)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -133,7 +133,7 @@ var verifyCmd = &cobra.Command{
 		}
 
 		conn := dial()
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		client := pb.NewProvenanceAnchorClient(conn)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -182,7 +182,7 @@ func main() {
 }
 
 func dial() *grpc.ClientConn {
-	conn, err := grpc.Dial(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		log.Fatalf("connect: %v", err)
 	}

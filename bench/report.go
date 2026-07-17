@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -70,7 +71,9 @@ func main() {
 	}
 
 	jsonBytes, _ := json.MarshalIndent(report, "", "  ")
-	os.WriteFile("bench/report.json", jsonBytes, 0644)
+	if err := os.WriteFile("bench/report.json", jsonBytes, 0644); err != nil {
+		log.Printf("bench: write report: %v", err)
+	}
 
 	fmt.Println("\n=== Gleipnir Performance Report ===")
 	fmt.Printf("Generated: %s\n", report.Generated.Format(time.RFC3339))

@@ -45,8 +45,8 @@ func New(depth int) *SparseMerkleTree {
 
 func parentHash(left, right [hashLen]byte) [hashLen]byte {
 	h := blake3.New(32, nil)
-	h.Write(left[:])
-	h.Write(right[:])
+	_, _ = h.Write(left[:])
+	_, _ = h.Write(right[:])
 	var sum [hashLen]byte
 	copy(sum[:], h.Sum(nil))
 	return sum
@@ -54,9 +54,9 @@ func parentHash(left, right [hashLen]byte) [hashLen]byte {
 
 func leafHash(key, value []byte) [hashLen]byte {
 	h := blake3.New(32, nil)
-	h.Write([]byte("leaf"))
-	h.Write(key)
-	h.Write(value)
+	_, _ = h.Write([]byte("leaf"))
+	_, _ = h.Write(key)
+	_, _ = h.Write(value)
 	var sum [hashLen]byte
 	copy(sum[:], h.Sum(nil))
 	return sum

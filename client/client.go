@@ -46,12 +46,8 @@ func New(addr string) (*Client, error) {
 }
 
 func NewWithConfig(cfg Config) (*Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.DialTimeout)
-	defer cancel()
-
-	conn, err := grpc.DialContext(ctx, cfg.Addr,
+	conn, err := grpc.NewClient(cfg.Addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("dial %s: %w", cfg.Addr, err)

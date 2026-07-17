@@ -42,11 +42,11 @@ func NewBoltStorage(path string) (*BoltStorage, error) {
 
 	s := &BoltStorage{db: db}
 	if err := s.initBuckets(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	if err := s.migrate(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, err
 	}
 	return s, nil
@@ -273,6 +273,7 @@ func (s *BoltStorage) LoadSubChains(ctx context.Context) (map[chain.SubChainID]i
 			var id chain.SubChainID
 			copy(id[:], k)
 			var sc consensus.SubChainManager
+			//nolint:staticcheck // SubChainManager has unexported fields; serialization is best-effort
 			if err := json.Unmarshal(v, &sc); err != nil {
 				return err
 			}

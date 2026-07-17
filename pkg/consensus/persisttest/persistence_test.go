@@ -1,3 +1,4 @@
+//nolint:errcheck // test assertions
 package persisttest
 
 import (

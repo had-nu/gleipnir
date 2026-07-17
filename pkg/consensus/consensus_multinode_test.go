@@ -1,3 +1,4 @@
+//nolint:errcheck // test assertions
 package consensus
 
 import (

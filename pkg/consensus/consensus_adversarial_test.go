@@ -1,7 +1,7 @@
+//nolint:errcheck // test assertions
 package consensus
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"sort"
@@ -20,13 +20,6 @@ func init() {
 		i += 1000
 		return time.Unix(0, i)
 	}
-}
-
-func buildSeed(cycle uint64, stateRoot []byte) []byte {
-	seed := make([]byte, 8+len(stateRoot))
-	binary.LittleEndian.PutUint64(seed, cycle)
-	copy(seed[8:], stateRoot)
-	return seed
 }
 
 // --- C01: Proposer-selection grinding ---

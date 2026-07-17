@@ -236,6 +236,7 @@ func (e *Engine) PendingCount() int {
 	return len(e.pending)
 }
 
+//nolint:unused
 func (e *Engine) countPendingBySubmitter(submitter []byte) int {
 	count := 0
 	for _, e := range e.pending {
@@ -406,7 +407,9 @@ func (e *Engine) RunCycle() {
 		for i := range entries {
 			var h [32]byte
 			copy(h[:], entries[i].Hash[:])
-			e.st.Insert(h[:], entries[i].Hash[:])
+			if err := e.st.Insert(h[:], entries[i].Hash[:]); err != nil {
+				log.Printf("IPC cycle %d: SMT Insert: %v", cycle, err)
+			}
 
 			proof, _ := e.st.Prove(h[:])
 			proofBytes := make([]byte, 0, len(proof)*32)
@@ -457,7 +460,9 @@ func (e *Engine) RunCycle() {
 		for i := range entries {
 			var h [32]byte
 			copy(h[:], entries[i].Hash[:])
-			e.st.Insert(h[:], entries[i].Hash[:])
+			if err := e.st.Insert(h[:], entries[i].Hash[:]); err != nil {
+				log.Printf("IPC cycle %d: SMT Insert: %v", cycle, err)
+			}
 
 			proof, _ := e.st.Prove(h[:])
 			proofBytes := make([]byte, 0, len(proof)*32)
@@ -538,6 +543,7 @@ func (e *Engine) RunCycle() {
 		cycle, len(entries), block.StateRoot, e.state.Lambda1)
 }
 
+//nolint:unused
 func findProposerIndex(peers []Peer, proposerHex string) int {
 	for i, p := range peers {
 		if p.UID.ID() == proposerHex {
@@ -647,13 +653,13 @@ func (e *Engine) verifyHash(hash [32]byte) (*chain.AnchorProof, bool) {
 
 func computeBlockHash(b chain.Block) []byte {
 	h := sha256.New()
-	binary.Write(h, binary.LittleEndian, b.Index)
-	h.Write(b.PrevHash)
-	h.Write(b.StateRoot)
-	h.Write(b.Proposer)
+	_ = binary.Write(h, binary.LittleEndian, b.Index)
+	_, _ = h.Write(b.PrevHash)
+	_, _ = h.Write(b.StateRoot)
+	_, _ = h.Write(b.Proposer)
 	for _, e := range b.Anchored {
-		h.Write(e.Hash[:])
+		_, _ = h.Write(e.Hash[:])
 	}
-	binary.Write(h, binary.LittleEndian, b.Timestamp)
+	_ = binary.Write(h, binary.LittleEndian, b.Timestamp)
 	return h.Sum(nil)
 }

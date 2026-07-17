@@ -77,7 +77,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("rest: %v", err)
 	}
-	defer restSrv.Stop()
+	defer func() { _ = restSrv.Stop() }()
 
 	lis, err := net.Listen("tcp", ":"+*grpcPort)
 	if err != nil {

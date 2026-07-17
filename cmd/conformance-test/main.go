@@ -71,15 +71,14 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 	defer cancel()
 
-	conn, err := grpc.DialContext(ctx, *target,
+	conn, err := grpc.NewClient(*target,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithBlock(),
 	)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "FATAL: dial %s: %v\n", *target, err)
 		os.Exit(1)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	raw := pb.NewProvenanceAnchorClient(conn)
 
 	waitForReady(ctx, raw)

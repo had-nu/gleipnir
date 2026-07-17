@@ -8,7 +8,7 @@ import (
 func Hash(data ...[]byte) []byte {
 	h := blake3.New(32, nil)
 	for _, d := range data {
-		h.Write(d)
+		_, _ = h.Write(d)
 	}
 	return h.Sum(nil)
 }

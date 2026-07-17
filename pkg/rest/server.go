@@ -104,7 +104,7 @@ func NewServer(engine *consensus.Engine, nodeUID *identity.UIDZeroSoulbound, opt
 		}
 	}
 	s.keys[nodeUID.ID()] = nodeUID
-	if s.allowedRoots != nil && len(s.allowedRoots) > 0 {
+	if len(s.allowedRoots) > 0 {
 		log.Printf("rest: whitelist enabled (%d roots)", len(s.allowedRoots))
 	}
 	return s, nil
@@ -240,7 +240,9 @@ func withCORS(next http.Handler) http.Handler {
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("rest: writeJSON: %v", err)
+	}
 }
 
 func sanitizeError(err string) string {
@@ -288,7 +290,7 @@ func (s *Server) authenticate(r *http.Request) (string, error) {
 	if err != nil {
 		return "", errors.New("cannot read body")
 	}
-	r.Body.Close()
+	_ = r.Body.Close()
 	r.Body = io.NopCloser(strings.NewReader(string(body)))
 
 	sig, err := hex.DecodeString(sigHex)

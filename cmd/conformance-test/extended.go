@@ -513,21 +513,4 @@ func e3StateRootChanges(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 	pass(tc, "-", "State root changes", time.Since(start), "state root unchanged (same block)")
 }
 
-// ── Validation helpers ───────────────────────────────────────────────────
-// Re-exported to the extended tests can import if needed.
 
-// submitHashValid is a small helper used by extended tests.
-func submitHashValid(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *identity.UIDZeroSoulbound, hash []byte, label string) error {
-	ts := time.Now().UnixNano()
-	sig := signPayload(uid, hash, uid.RootID, ts, label)
-	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
-	})
-	if err != nil {
-		return err
-	}
-	if !resp.Accepted {
-		return fmt.Errorf("rejected: %s (%s)", resp.Status, resp.ErrorCode)
-	}
-	return nil
-}

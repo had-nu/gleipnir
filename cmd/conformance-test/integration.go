@@ -5,7 +5,6 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"time"
 )
 
@@ -170,9 +169,4 @@ func subChainFixture() []SubChainEntry {
 	}
 }
 
-// ── Export helpers ───────────────────────────────────────────────────────
 
-func exportJSON(v any) string {
-	b, _ := json.MarshalIndent(v, "", "  ")
-	return string(b)
-}

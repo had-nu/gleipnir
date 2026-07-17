@@ -81,7 +81,7 @@ func computeLambda1PowerIter(l *mat.SymDense, opts Lambda1Options) (float64, boo
 		for j := i; j < n; j++ {
 			v := l.At(i, j)
 			if i == j {
-				v += opts.Shift
+				v += mu
 			}
 			shifted.SetSym(i, j, v)
 		}

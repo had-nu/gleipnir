@@ -45,7 +45,7 @@ type Config struct {
 type GossipBus struct {
 	host       host.Host
 	discovery  mdns.Service
-	notifee    *mdnsNotifee
+	notifee    *mdnsNotifee //nolint:unused
 
 	mu        sync.Mutex
 	pending   []chain.ProvenanceEntry
@@ -55,7 +55,7 @@ type GossipBus struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	wg     sync.WaitGroup //nolint:unused
 }
 
 // mdnsNotifee implements mdns.Notifee
@@ -84,6 +84,7 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 	var err error
 	if cfg.PrivateKeyFile != "" {
 		// TODO: load from file
+		_ = cfg.PrivateKeyFile
 	}
 	if privKey == nil {
 		privKey, _, err = crypto.GenerateEd25519Key(rand.Reader)
@@ -142,7 +143,7 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 		s := mdns.NewMdnsService(h, cfg.MDNSServiceTag, notifee)
 		bus.discovery = s
 		if err := s.Start(); err != nil {
-			h.Close()
+			_ = h.Close()
 			cancel()
 			return nil, fmt.Errorf("mdns start: %w", err)
 		}
@@ -249,7 +250,7 @@ func (b *GossipBus) GetSigs(cycle uint64) []consensus.BlockSig {
 // --- Stream handlers ---
 
 func (b *GossipBus) handleEntriesStream(s network.Stream) {
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	var lenBuf [4]byte
 	if _, err := s.Read(lenBuf[:]); err != nil {
 		return
@@ -269,7 +270,7 @@ func (b *GossipBus) handleEntriesStream(s network.Stream) {
 }
 
 func (b *GossipBus) handleProposalsStream(s network.Stream) {
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	var lenBuf [4]byte
 	if _, err := s.Read(lenBuf[:]); err != nil {
 		return
@@ -289,7 +290,7 @@ func (b *GossipBus) handleProposalsStream(s network.Stream) {
 }
 
 func (b *GossipBus) handleSigsStream(s network.Stream) {
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 	var lenBuf [4]byte
 	if _, err := s.Read(lenBuf[:]); err != nil {
 		return
@@ -352,7 +353,7 @@ func (b *GossipBus) sendStream(pid peer.ID, proto protocol.ID, data []byte) {
 		log.Printf("new stream to %s: %v", pid, err)
 		return
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	var lenBuf [4]byte
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
@@ -367,7 +368,7 @@ func (b *GossipBus) sendStream(pid peer.ID, proto protocol.ID, data []byte) {
 func (b *GossipBus) Close() error {
 	b.cancel()
 	if b.discovery != nil {
-		b.discovery.Close()
+		_ = b.discovery.Close()
 	}
 	return b.host.Close()
 }
