@@ -3,7 +3,7 @@ module github.com/had-nu/gleipnir
 go 1.25.7
 
 require (
-	github.com/bwesterb/go-ristretto v1.2.3
+	github.com/bwesterb/go-ristretto v1.2.4
 	github.com/cloudflare/circl v1.6.3
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/libp2p/go-libp2p v0.48.0
