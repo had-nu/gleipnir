@@ -43,7 +43,6 @@ func p1MastheadPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 		return
 	}
 
-	// Wait for last finding to anchor
 	lastHash := scan.Findings[len(scan.Findings)-1].Hash()
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -54,7 +53,6 @@ func p1MastheadPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 		return
 	}
 
-	// Verify all findings
 	for _, f := range scan.Findings {
 		v, err := raw.VerifyHash(ctx, &pb.VerifyRequest{Hash: f.Hash()})
 		if err != nil || !v.Found {
@@ -163,7 +161,6 @@ func p4CompliancePipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, ui
 	scan := mastheadFixture()
 	finding := scan.Findings[0] // HSTS missing on /login
 
-	// Resolve compliance controls for this finding
 	var triggered []ComplianceMapping
 	for _, m := range complianceFixtures {
 		triggered = append(triggered, m)

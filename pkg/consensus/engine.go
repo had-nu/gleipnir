@@ -40,8 +40,7 @@ type Engine struct {
 	storage    EngineStorage // optional persistence
 	rateLimiter *SubmitterLimiter // sliding-window rate limiter
 
-	// Quorum configuration (BFT)
-	quorumConfig chain.QuorumConfig // BFT quorum config (n, m)
+	quorumConfig chain.QuorumConfig
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -142,11 +141,9 @@ func (e *Engine) persist() {
 	_ = e.storage.SaveState(ctx, e.state)
 	_ = e.storage.SavePending(ctx, e.pending)
 	_ = e.storage.SaveSMT(ctx, e.st)
-	// Save anchored proofs
 	for h, p := range e.anchored {
 		_ = e.storage.SaveAnchored(ctx, h, p)
 	}
-	// Save blocks
 	for _, b := range e.blocks {
 		_ = e.storage.SaveBlock(ctx, b)
 	}
@@ -303,8 +300,6 @@ func (e *Engine) RunCycle() {
 	cycle := e.state.Cycle
 	myUIDHex := e.node.UID.ID()
 
-	// Clear local pending; entries were already gossiped at Enqueue time.
-	// Non-proposers must NOT re-gossip here — the proposer already collected them.
 	if e.gossip != nil {
 		e.pending = e.pending[:0]
 	}
@@ -382,7 +377,6 @@ func (e *Engine) RunCycle() {
 			return
 		}
 
-		// Dedup
 		seen := make(map[[32]byte]int)
 		unique := make([]chain.ProvenanceEntry, 0, len(entries))
 		for _, entry := range entries {
@@ -503,8 +497,7 @@ func (e *Engine) RunCycle() {
 			sigMap[s.SignerID] = s.Sig
 		}
 
-		// Collect signatures from all validators
-		validSigs := make([][]byte, 0, len(e.peers))
+			validSigs := make([][]byte, 0, len(e.peers))
 		for _, p := range e.peers {
 			if sig, ok := sigMap[p.UID.ID()]; ok && len(sig) > 0 {
 				validSigs = append(validSigs, sig)

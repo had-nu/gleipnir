@@ -100,24 +100,18 @@ func HashToCurve(alpha []byte) *ristretto.Point {
 // Prove generates a VRF proof for the given input.
 // Uses a Schnorr proof that Gamma = sk * H without revealing sk.
 func (sk *VRFPrivateKey) Prove(alpha []byte) (*VRFProof, error) {
-	// H = HashToCurve(alpha)
 	H := HashToCurve(alpha)
 
-	// Gamma = sk * H
 	gammaPoint := new(ristretto.Point).ScalarMult(H, sk.sk)
 	gammaBytes := gammaPoint.Bytes()
 
-	// k = deterministic nonce derived from (alpha || sk)
 	k := deriveNonce(alpha, sk.sk.Bytes())
 
-	// R = k * H (commitment)
 	R := new(ristretto.Point).ScalarMult(H, k)
 	RBytes := R.Bytes()
 
-	// c = HashToScalar(H || Gamma || R)  (Fiat-Shamir challenge)
 	c := hashToScalar(H.Bytes(), gammaBytes, RBytes)
 
-	// s = k - c * sk (mod q)
 	s := new(ristretto.Scalar)
 	s.Sub(k, new(ristretto.Scalar).Mul(c, sk.sk))
 
@@ -131,7 +125,6 @@ func (sk *VRFPrivateKey) Prove(alpha []byte) (*VRFProof, error) {
 // Verify verifies a VRF proof and returns the VRF output (gamma).
 // Checks: c == HashToScalar(H || Gamma || s*H + c*Gamma)
 func (pk *VRFPublicKey) Verify(alpha []byte, proof *VRFProof) ([]byte, error) {
-	// Parse proof
 	gammaPoint := new(ristretto.Point)
 	if err := gammaPoint.UnmarshalBinary(proof.Gamma); err != nil {
 		return nil, ErrVRFVerifyFailed
@@ -143,7 +136,6 @@ func (pk *VRFPublicKey) Verify(alpha []byte, proof *VRFProof) ([]byte, error) {
 	s := new(ristretto.Scalar)
 	s.SetBytes((*[32]byte)(proof.S))
 
-	// H = HashToCurve(alpha)
 	H := HashToCurve(alpha)
 
 	// Reconstruct commitment: R = s*H + c*Gamma

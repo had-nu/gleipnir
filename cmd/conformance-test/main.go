@@ -215,8 +215,6 @@ func printReport() {
 	}
 }
 
-// helpers
-
 func randomHash() []byte {
 	h := make([]byte, 32)
 	rand.Read(h)

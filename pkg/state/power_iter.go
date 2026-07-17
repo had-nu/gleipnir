@@ -64,7 +64,6 @@ func ComputeLambda1WithOptions(l *mat.SymDense, opts Lambda1Options) float64 {
 func computeLambda1PowerIter(l *mat.SymDense, opts Lambda1Options) (float64, bool) {
 	n, _ := l.Dims()
 
-	// Shift parameter μ
 	mu := opts.Shift
 	if mu <= 0 {
 		mu = 1e-2
@@ -107,7 +106,6 @@ func computeLambda1PowerIter(l *mat.SymDense, opts Lambda1Options) (float64, boo
 
 	var lambda float64
 	for iter := 0; iter < opts.MaxIter; iter++ {
-		// Solve (L + μI) x = b using Cholesky
 		x := mat.NewVecDense(n, nil)
 		if err := cholFact.SolveVecTo(x, b); err != nil {
 			return 0, false
@@ -126,7 +124,6 @@ func computeLambda1PowerIter(l *mat.SymDense, opts Lambda1Options) (float64, boo
 
 		lambdaNew := xTLx / xTx
 
-		// Check convergence
 		if lambda > 0 {
 			relDiff := math.Abs(lambdaNew-lambda) / math.Max(math.Abs(lambdaNew), 1.0)
 			if relDiff < opts.Tolerance {

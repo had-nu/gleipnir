@@ -209,7 +209,6 @@ func (t *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
 		depth--
 	}
 
-	// After exhausting depth levels, check if current hash is a leaf node.
 	if n, exists := t.store[current]; exists && n.Leaf {
 		return proof, nil
 	}

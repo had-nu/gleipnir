@@ -43,7 +43,6 @@ func (sl *SubmitterLimiter) Allow(submitter []byte) bool {
 	now := time.Now()
 	cutoff := now.Add(-sl.windowDur)
 
-	// Remove expired entries
 	valid := w.entries[:0]
 	for _, t := range w.entries {
 		if t.After(cutoff) {

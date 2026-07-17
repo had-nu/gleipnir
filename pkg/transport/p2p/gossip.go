@@ -93,7 +93,6 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 		}
 	}
 
-	// Create host
 	ps, err := pstoremem.NewPeerstore()
 	if err != nil {
 		cancel()
@@ -132,12 +131,10 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 	}
 	notifee.bus = bus
 
-	// Register stream handlers
 	h.SetStreamHandler(protocolEntries, bus.handleEntriesStream)
 	h.SetStreamHandler(protocolProposals, bus.handleProposalsStream)
 	h.SetStreamHandler(protocolSigs, bus.handleSigsStream)
 
-	// mDNS discovery
 	if cfg.EnableMDNS {
 		if cfg.MDNSServiceTag == "" {
 			cfg.MDNSServiceTag = "gleipnir"
@@ -151,7 +148,6 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 		}
 	}
 
-	// Connect to bootstrap peers
 	for _, peerAddr := range cfg.BootstrapPeers {
 		bus.connectToPeer(peerAddr)
 	}

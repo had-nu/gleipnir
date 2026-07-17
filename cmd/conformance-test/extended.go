@@ -93,7 +93,6 @@ func a4EntryNonRepudiation(ctx context.Context, raw pb.ProvenanceAnchorClient, u
 		return
 	}
 
-	// Verify the entry appears in the block
 	found, err := entryInBlock(ctx, raw, bidx, hash)
 	if err != nil || !found {
 		fail(tc, "G0", "Entry non-repudiation", time.Since(start), "entry not in block")
@@ -110,14 +109,12 @@ func a6DedupAfterAnchor(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 	start := time.Now()
 	hash := randomHash()
 
-	// First submit
 	_, err := submitAndWait(ctx, raw, uid, hash, "a6-first")
 	if err != nil {
 		fail(tc, "-", "Dedup after anchor", time.Since(start), fmt.Sprintf("first submit: %v", err))
 		return
 	}
 
-	// Second submit (same hash)
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hash, uid.RootID, ts, "a6-dup")
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
@@ -285,7 +282,6 @@ func c2SmtProofVsBlockRoot(ctx context.Context, raw pb.ProvenanceAnchorClient, u
 		return
 	}
 
-	// Verify SMT proof against block's state_root
 	var root [32]byte
 	copy(root[:], b.StateRoot)
 	var hArr [32]byte
@@ -316,14 +312,12 @@ func c3DecisionChain(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 	hashA := randomHash()
 	hashB := randomHash()
 
-	// Entry A
 	_, err := submitAndWait(ctx, raw, uid, hashA, "c3-entry-a")
 	if err != nil {
 		fail(tc, "G0", "Decision chain", time.Since(start), fmt.Sprintf("entry A: %v", err))
 		return
 	}
 
-	// Entry B references A
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hashB, uid.RootID, ts, "c3-entry-b")
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
@@ -341,14 +335,12 @@ func c3DecisionChain(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 		return
 	}
 
-	// Verify B's entry in block has Reference=A
 	found, err := entryInBlock(ctx, raw, bidxB, hashB)
 	if err != nil || !found {
 		fail(tc, "G0", "Decision chain", time.Since(start), "entry B not in block")
 		return
 	}
 
-	// Get the block to check Reference
 	b, err := raw.GetBlock(ctx, &pb.BlockRequest{Index: bidxB})
 	if err != nil {
 		fail(tc, "G0", "Decision chain", time.Since(start), fmt.Sprintf("GetBlock: %v", err))
@@ -381,7 +373,6 @@ func c5EntrySigVerify(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *i
 		return
 	}
 
-	// Verify via block
 	b, err := raw.GetBlock(ctx, &pb.BlockRequest{Index: bidx})
 	if err != nil {
 		fail(tc, "G0", "Entry signature verify", time.Since(start), fmt.Sprintf("GetBlock: %v", err))
@@ -449,7 +440,7 @@ func d4LargePayload(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *ide
 	tc := "D4"
 	start := time.Now()
 
-	bigLabel := string(make([]byte, 1<<20)) // 1MB label
+	bigLabel := string(make([]byte, 1<<20))
 	hash := randomHash()
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hash, uid.RootID, ts, bigLabel)
