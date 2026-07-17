@@ -1,4 +1,4 @@
-FROM golang:1.25-alpine AS builder
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -9,7 +9,7 @@ RUN CGO_ENABLED=0 go build -o /provenanced ./cmd/provenanced && \
     CGO_ENABLED=0 go build -o /pipeline-sim ./cmd/pipeline-sim && \
     CGO_ENABLED=0 go build -o /conformance-test ./cmd/conformance-test
 
-FROM alpine:3.20
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates
 COPY --from=builder /provenanced /usr/local/bin/
 COPY --from=builder /provectl /usr/local/bin/
