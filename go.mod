@@ -5,7 +5,7 @@ go 1.25.7
 require (
 	github.com/bwesterb/go-ristretto v1.2.3
 	github.com/cloudflare/circl v1.6.3
-	github.com/fxamacker/cbor/v2 v2.9.0
+	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/multiformats/go-multiaddr v0.16.1
 	github.com/prometheus/client_golang v1.23.2
