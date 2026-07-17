@@ -216,7 +216,7 @@ func printReport() {
 
 func randomHash() []byte {
 	h := make([]byte, 32)
-	rand.Read(h)
+	_, _ = rand.Read(h)
 	return h
 }
 
@@ -313,7 +313,7 @@ func tc03BadSignature(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *i
 // TC04 — G3: SubmitHash with unregistered submitter → SUBMITTER_MISMATCH
 func tc04UnknownSubmitter(ctx context.Context, raw pb.ProvenanceAnchorClient) {
 	unknownID := make([]byte, 16)
-	rand.Read(unknownID)
+	_, _ = rand.Read(unknownID)
 	hash := randomHash()
 	ts := time.Now().UnixNano()
 	label := labelPrefix + "tc04"
