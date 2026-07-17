@@ -13,7 +13,7 @@ require (
 	go.etcd.io/bbolt v1.5.0
 	golang.org/x/crypto v0.50.0
 	gonum.org/v1/gonum v0.17.0
-	google.golang.org/grpc v1.79.2
+	google.golang.org/grpc v1.82.1
 	google.golang.org/protobuf v1.36.11
 	lukechampine.com/blake3 v1.4.1
 )
@@ -89,8 +89,6 @@ require (
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/wlynxg/anet v0.0.5 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
-	go.opentelemetry.io/otel v1.42.0 // indirect
-	go.opentelemetry.io/otel/sdk/metric v1.42.0 // indirect
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/fx v1.24.0 // indirect
 	go.uber.org/mock v0.5.2 // indirect
