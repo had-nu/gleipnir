@@ -1,4 +1,4 @@
-.PHONY: all build proto test lint clean docker-sim docker-down
+.PHONY: all build proto test test-race lint vet fmt check audit clean pre-commit docker-sim docker-down
 
 # IPC (Immutable Provenance Chain) — Gleipnir reference implementation
 PROJECT := github.com/had-nu/gleipnir
@@ -25,6 +25,26 @@ test-race:
 
 lint:
 	golangci-lint run ./...
+
+vet:
+	go vet ./...
+
+fmt:
+	gofmt -l .
+
+# Combined check: fmt + vet + lint + build + test + race
+check: fmt vet lint build test test-race
+
+# Security audit (requires gosec: go install github.com/securego/gosec/v2/cmd/gosec@latest)
+audit:
+	gosec -quiet -confidence medium ./...
+
+# Pre-commit hook install
+pre-commit:
+	@echo '#!/bin/sh' > .git/hooks/pre-commit
+	@echo 'make check' >> .git/hooks/pre-commit
+	@chmod +x .git/hooks/pre-commit
+	@echo "Pre-commit hook installed (runs 'make check' before each commit)"
 
 clean:
 	rm -rf $(BUILD_DIR)/

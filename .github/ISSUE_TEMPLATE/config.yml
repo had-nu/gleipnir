@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security Vulnerability
+    url: https://github.com/had-nu/gleipnir/security/advisories/new
+    about: Report a security vulnerability privately
+  - name: Discussion
+    url: https://github.com/had-nu/gleipnir/discussions
+    about: Ask questions and discuss ideas

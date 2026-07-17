@@ -1,0 +1,32 @@
+# Auto-detect text files and normalize to LF
+* text=auto
+
+# Go source
+*.go text diff=golang
+
+# Protocol buffers
+*.proto text
+*.pb.go text linguist-generated=true
+*_grpc.pb.go text linguist-generated=true
+
+# Markdown
+*.md text
+
+# Config files
+*.yml text
+*.yaml text
+*.json text
+*.toml text
+Makefile text
+Dockerfile text
+
+# Binary files
+*.png binary
+*.jpg binary
+*.zip binary
+*.tar.gz binary
+
+# Cryptographic material (should not be committed, but mark binary if present)
+*.cbor binary
+*.key binary
+*.pem binary
