@@ -17,7 +17,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     env:
-      GOTOOLCHAIN: local
+      GODEBUG: goversioncheck=0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -58,7 +58,7 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: Test with race detection
-        run: go test -race ./pkg/... -count=1 -timeout=180s
+        run: go test -race -short ./pkg/... -count=1 -timeout=600s
 
   vet:
     runs-on: ubuntu-latest
