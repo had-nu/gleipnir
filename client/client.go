@@ -80,8 +80,10 @@ func (c *Client) Submit(ctx context.Context, hash []byte, label string) (*Ticket
 		Timestamp: time.Now().UnixNano(),
 	}
 	if c.identity != nil {
-		req.Submitter = c.identity.RootID
-		req.Signature = signPayload(c.identity, req.Hash, req.Submitter, req.Timestamp, req.Label)
+		var submitter [16]byte
+		copy(submitter[:], c.identity.RootID[:])
+		req.Submitter = submitter[:]
+		req.Signature = signPayload(c.identity, req.Hash, submitter, req.Timestamp, req.Label)
 	}
 	resp, err := c.pb.SubmitHash(ctx, req)
 	if err != nil {
@@ -96,11 +98,11 @@ func (c *Client) Submit(ctx context.Context, hash []byte, label string) (*Ticket
 	}, nil
 }
 
-func (c *Client) SubmitSigned(ctx context.Context, hash []byte, submitter []byte, label string, approver []byte, reference []byte, signer *identity.UIDZeroSoulbound) (*Ticket, error) {
+func (c *Client) SubmitSigned(ctx context.Context, hash []byte, submitter [16]byte, label string, approver []byte, reference []byte, signer *identity.UIDZeroSoulbound) (*Ticket, error) {
 	ts := time.Now().UnixNano()
 	req := &pb.SubmitRequest{
 		Hash:      hash,
-		Submitter: submitter,
+		Submitter: submitter[:],
 		Label:     label,
 		Timestamp: ts,
 		Signature: signPayload(signer, hash, submitter, ts, label),
@@ -124,12 +126,12 @@ func (c *Client) SubmitSigned(ctx context.Context, hash []byte, submitter []byte
 	}, nil
 }
 
-func signPayload(uid *identity.UIDZeroSoulbound, hash, submitter []byte, ts int64, label string) []byte {
+func signPayload(uid *identity.UIDZeroSoulbound, hash []byte, submitter [16]byte, ts int64, label string) []byte {
 	tsLE := make([]byte, 8)
 	binary.LittleEndian.PutUint64(tsLE, uint64(ts))
 	signed := make([]byte, 0, len(hash)+len(submitter)+len(tsLE)+len(label))
 	signed = append(signed, hash...)
-	signed = append(signed, submitter...)
+	signed = append(signed, submitter[:]...)
 	signed = append(signed, tsLE...)
 	signed = append(signed, label...)
 	return identity.SignDilithium(uid.SecretKey, signed)

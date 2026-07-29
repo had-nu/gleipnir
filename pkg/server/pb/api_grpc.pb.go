@@ -5,7 +5,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.6.2
 // - protoc             v7.35.1
-// source: pkg/server/api.proto
+// source: api.proto
 
 package pb
 
@@ -352,5 +352,5 @@ var ProvenanceAnchor_ServiceDesc = grpc.ServiceDesc{
 			ServerStreams: true,
 		},
 	},
-	Metadata: "pkg/server/api.proto",
+	Metadata: "api.proto",
 }

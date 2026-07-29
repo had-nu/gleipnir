@@ -29,7 +29,7 @@ func p1MastheadPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 		sig := signPayload(uid, fHash, uid.RootID, ts, label)
 
 		resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-			Hash: fHash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+			Hash: fHash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 		})
 		if err != nil || !resp.Accepted {
 			fail(tc, "G0", "Masthead→IPC pipeline", time.Since(start),
@@ -84,7 +84,7 @@ func p2HashchainPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid
 		sig := signPayload(uid, h[:], uid.RootID, ts, label)
 
 		resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-			Hash: h[:], Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+			Hash: h[:], Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 		})
 		if err != nil || !resp.Accepted {
 			fail(tc, "-", "Hashchain→IPC pipeline", time.Since(start),
@@ -124,7 +124,7 @@ func p3VigilPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 	sig := signPayload(uid, h[:], uid.RootID, ts, label)
 
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: h[:], Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+		Hash: h[:], Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 	})
 	if err != nil || !resp.Accepted {
 		fail(tc, "G0", "Vigil→IPC pipeline", time.Since(start),
@@ -173,7 +173,7 @@ func p4CompliancePipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, ui
 	sig := signPayload(uid, h[:], uid.RootID, ts, label)
 
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: h[:], Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+		Hash: h[:], Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 	})
 	if err != nil || !resp.Accepted {
 		fail(tc, "G0", "Compliance→IPC pipeline", time.Since(start),
@@ -210,7 +210,7 @@ func f1SubChain(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *identit
 		sig := signPayload(uid, h[:], uid.RootID, ts, label)
 
 		resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-			Hash: h[:], Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+			Hash: h[:], Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 		})
 		if err != nil || !resp.Accepted {
 			fail(tc, "-", "Sub-chain anchoring", time.Since(start),
@@ -242,7 +242,7 @@ func submitAndWait(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *iden
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hash, uid.RootID, ts, label)
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("submit: %w", err)

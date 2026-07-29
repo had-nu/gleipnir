@@ -17,9 +17,15 @@ func cmdInit(validators int, outDir string) error {
 
 	manifest := make(map[string]string)
 
+	var networkID [32]byte
+	copy(networkID[:], []byte("gleipnir-genesis-network"))
+
 	for i := 1; i <= validators; i++ {
 		seed := fmt.Sprintf("gleipnir-validator-%d-%s", i, hex.EncodeToString([]byte(fmt.Sprintf("genesis-%d", i))))
-		uid := identity.NewUIDZero(seed, true)
+		uid, err := identity.NewUIDZero(seed, networkID, true)
+		if err != nil {
+			return fmt.Errorf("NewUIDZero: %w", err)
+		}
 
 		em, err := cbor.Marshal(uid)
 		if err != nil {

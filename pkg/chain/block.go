@@ -2,6 +2,7 @@
 package chain
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
 	"math"
@@ -174,6 +175,17 @@ func ComputeBlockHash(b *Block) []byte {
 	}
 
 	return h.Sum(nil)
+}
+
+// ComputeHash computes and returns the SHA-256 hash of the block.
+// This is the canonical block hash per 3CP spec §3.2.
+func (b *Block) ComputeHash() []byte {
+	return ComputeBlockHash(b)
+}
+
+// VerifyHash checks if the stored BlockHash matches the computed hash.
+func (b *Block) VerifyHash() bool {
+	return bytes.Equal(b.BlockHash, b.ComputeHash())
 }
 
 // MarshalCBOR encodes a block to canonical CBOR.

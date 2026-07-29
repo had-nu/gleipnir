@@ -4,7 +4,6 @@ package server
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/binary"
 	"net"
 	"testing"
 	"time"
@@ -44,23 +43,19 @@ func newTestServer(t *testing.T) (*Server, pb.ProvenanceAnchorClient, func()) {
 
 	client := pb.NewProvenanceAnchorClient(conn)
 
-	return srv, client, func() {
+	cleanup := func() {
+		conn.Close()
 		gs.Stop()
 		lis.Close()
-		conn.Close()
 		srv.Stop()
 	}
+
+	return srv, client, cleanup
 }
 
-func signSubmitRequest(uid *identity.UIDZeroSoulbound, hash []byte, submitter []byte, ts int64, label string) []byte {
-	tsBytes := make([]byte, 8)
-	binary.LittleEndian.PutUint64(tsBytes, uint64(ts))
-	signed := make([]byte, 0, len(hash)+len(submitter)+len(tsBytes)+len(label))
-	signed = append(signed, hash...)
-	signed = append(signed, submitter...)
-	signed = append(signed, tsBytes...)
-	signed = append(signed, label...)
-	return identity.SignDilithium(uid.SecretKey, signed)
+func signSubmitRequest(uid *identity.UIDZeroSoulbound, hash []byte, submitter [16]byte, ts int64, label string) []byte {
+	payload := identity.CanonicalPayload(hash, submitter[:], ts, label)
+	return identity.SignDilithium3(uid.SecretKey, payload)
 }
 
 func TestGrpcSubmitHashRejectsUnauthenticated(t *testing.T) {
@@ -93,7 +88,10 @@ func TestGrpcSubmitHashRejectsUnauthenticated(t *testing.T) {
 func TestGrpcSubmitHashRejectsBadSignature(t *testing.T) {
 	var networkID [32]byte
 	copy(networkID[:], []byte("test-network-id"))
-	uid, _ := identity.NewUIDZero("test-client", networkID, true)
+	uid, err := identity.NewUIDZero("test-client", networkID, true)
+	if err != nil {
+		t.Fatalf("NewUIDZero error: %v", err)
+	}
 	_, client, cleanup := newTestServer(t)
 	defer cleanup()
 
@@ -102,13 +100,15 @@ func TestGrpcSubmitHashRejectsBadSignature(t *testing.T) {
 
 	hash := sha256.Sum256([]byte("test-entry"))
 	ts := time.Now().UnixNano()
-	wrongUID, _ := identity.NewUIDZero("wrong-key", networkID, true)
-
+	wrongUID, err := identity.NewUIDZero("wrong-key", networkID, true)
+	if err != nil {
+		t.Fatalf("NewUIDZero error: %v", err)
+	}
 	var uidSubmitter, wrongSubmitter [16]byte
 	copy(uidSubmitter[:], uid.RootID[:])
 	copy(wrongSubmitter[:], wrongUID.RootID[:])
 
-	sig := signSubmitRequest(wrongUID, hash[:], uidSubmitter[:], ts, "test")
+	sig := signSubmitRequest(wrongUID, hash[:], wrongSubmitter, ts, "test")
 
 	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
 		Hash:      hash[:],
@@ -128,7 +128,10 @@ func TestGrpcSubmitHashRejectsBadSignature(t *testing.T) {
 func TestGrpcSubmitHashSubmitterMismatch(t *testing.T) {
 	var networkID [32]byte
 	copy(networkID[:], []byte("test-network-id"))
-	clientUID, _ := identity.NewUIDZero("test-client", networkID, true)
+	clientUID, err := identity.NewUIDZero("test-client", networkID, true)
+	if err != nil {
+		t.Fatalf("NewUIDZero error: %v", err)
+	}
 	_, client, cleanup := newTestServer(t)
 	defer cleanup()
 
@@ -140,7 +143,7 @@ func TestGrpcSubmitHashSubmitterMismatch(t *testing.T) {
 	var submitter [16]byte
 	copy(submitter[:], clientUID.RootID[:])
 
-	sig := signSubmitRequest(clientUID, hash[:], submitter[:], ts, "test")
+	sig := signSubmitRequest(clientUID, hash[:], submitter, ts, "test")
 
 	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
 		Hash:      hash[:],
@@ -161,15 +164,8 @@ func TestGrpcSubmitHashAuthenticated(t *testing.T) {
 	srv, client, cleanup := newTestServer(t)
 	defer cleanup()
 
-	// Use the server's own identity which is already registered in srv.keys
-	var uid *identity.UIDZeroSoulbound
-	for _, v := range srv.keys {
-		uid = v
-		break
-	}
-	if uid == nil {
-		t.Fatal("server has no registered identity")
-	}
+	// Use the server's own identity which is already registered
+	uid := srv.identity
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -179,7 +175,7 @@ func TestGrpcSubmitHashAuthenticated(t *testing.T) {
 	var submitter [16]byte
 	copy(submitter[:], uid.RootID[:])
 
-	sig := signSubmitRequest(uid, hash[:], submitter[:], ts, "test")
+	sig := signSubmitRequest(uid, hash[:], submitter, ts, "test")
 
 	resp, err := client.SubmitHash(ctx, &pb.SubmitRequest{
 		Hash:      hash[:],
@@ -213,14 +209,7 @@ func TestGrpcVerifyHash(t *testing.T) {
 	defer cleanup()
 
 	// Use server's identity
-	var uid *identity.UIDZeroSoulbound
-	for _, v := range srv.keys {
-		uid = v
-		break
-	}
-	if uid == nil {
-		t.Fatal("server has no registered identity")
-	}
+	uid := srv.identity
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -230,7 +219,7 @@ func TestGrpcVerifyHash(t *testing.T) {
 	var submitter [16]byte
 	copy(submitter[:], uid.RootID[:])
 
-	sig := signSubmitRequest(uid, hash[:], submitter[:], ts, "verify-test")
+	sig := signSubmitRequest(uid, hash[:], submitter, ts, "verify-test")
 
 	// Submit
 	_, err := client.SubmitHash(ctx, &pb.SubmitRequest{
@@ -309,14 +298,7 @@ func TestGrpcGetBlock(t *testing.T) {
 	srv, client, cleanup := newTestServer(t)
 	defer cleanup()
 
-	var uid *identity.UIDZeroSoulbound
-	for _, v := range srv.keys {
-		uid = v
-		break
-	}
-	if uid == nil {
-		t.Fatal("server has no registered identity")
-	}
+	uid := srv.identity
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -326,7 +308,7 @@ func TestGrpcGetBlock(t *testing.T) {
 	var submitter [16]byte
 	copy(submitter[:], uid.RootID[:])
 
-	sig := signSubmitRequest(uid, hash[:], submitter[:], ts, "block-test")
+	sig := signSubmitRequest(uid, hash[:], submitter, ts, "block-test")
 
 	_, err := client.SubmitHash(ctx, &pb.SubmitRequest{
 		Hash:      hash[:],
@@ -346,7 +328,7 @@ func TestGrpcGetBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !proof.Found {
-		t.Fatal("anchor not found")
+		t.Fatal("anchor not found after submit")
 	}
 
 	ctx3, cancel3 := context.WithTimeout(context.Background(), 5*time.Second)

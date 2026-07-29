@@ -25,7 +25,7 @@ func a1WrongLengthHash(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, shortHash, uid.RootID, ts, "a1-short")
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: shortHash, Submitter: uid.RootID, Timestamp: ts, Label: "a1-short", Signature: sig,
+		Hash: shortHash, Submitter: uid.RootID[:], Timestamp: ts, Label: "a1-short", Signature: sig,
 	})
 	if err != nil {
 		pass(tc, "-", "Hash wrong length (short)", time.Since(start), fmt.Sprintf("gRPC error: %v", err))
@@ -51,7 +51,7 @@ func a2LabelEdgeCases(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *i
 		ts := time.Now().UnixNano()
 		sig := signPayload(uid, hash, uid.RootID, ts, label)
 		resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-			Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+			Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 		})
 		if err != nil {
 			pass(tc, "-", "Label edge cases", time.Since(start), fmt.Sprintf("label=%q gRPC error: %v", label, err))
@@ -79,8 +79,8 @@ func a4EntryNonRepudiation(ctx context.Context, raw pb.ProvenanceAnchorClient, u
 	sig := signPayload(uid, hash, uid.RootID, ts, label)
 
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
-		Reference: entryPayload[:], Approver: uid.RootID,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
+		Reference: entryPayload[:], Approver: uid.RootID[:],
 	})
 	if err != nil || !resp.Accepted {
 		fail(tc, "G0", "Entry non-repudiation", time.Since(start), fmt.Sprintf("submit: %v %s", err, resp.Status))
@@ -114,11 +114,11 @@ func a6DedupAfterAnchor(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 		fail(tc, "-", "Dedup after anchor", time.Since(start), fmt.Sprintf("first submit: %v", err))
 		return
 	}
-
-	ts := time.Now().UnixNano()
+ts := time.Now().UnixNano()
 	sig := signPayload(uid, hash, uid.RootID, ts, "a6-dup")
+
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: "a6-dup", Signature: sig,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: "a6-dup", Signature: sig,
 	})
 	if err != nil {
 		pass(tc, "-", "Dedup after anchor", time.Since(start), fmt.Sprintf("gRPC error: %v", err))
@@ -172,7 +172,7 @@ func a9VerifyBeforeAnchor(ctx context.Context, raw pb.ProvenanceAnchorClient, ui
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hash, uid.RootID, ts, "a9-before")
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: "a9-before", Signature: sig,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: "a9-before", Signature: sig,
 	})
 	if err != nil || !resp.Accepted {
 		fail(tc, "-", "Verify before anchor", time.Since(start), fmt.Sprintf("submit: %v %s", err, resp.Status))
@@ -321,7 +321,7 @@ func c3DecisionChain(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hashB, uid.RootID, ts, "c3-entry-b")
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hashB, Submitter: uid.RootID, Timestamp: ts, Label: "c3-entry-b", Signature: sig,
+		Hash: hashB, Submitter: uid.RootID[:], Timestamp: ts, Label: "c3-entry-b", Signature: sig,
 		Reference: hashA,
 	})
 	if err != nil || !resp.Accepted {
@@ -445,7 +445,7 @@ func d4LargePayload(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *ide
 	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hash, uid.RootID, ts, bigLabel)
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: bigLabel, Signature: sig,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: bigLabel, Signature: sig,
 	})
 	if err != nil {
 		pass(tc, "-", "Large payload", time.Since(start), fmt.Sprintf("gRPC error: %v", err))
