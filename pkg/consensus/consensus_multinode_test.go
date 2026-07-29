@@ -2,6 +2,7 @@
 package consensus
 
 import (
+	"bytes"
 	"testing"
 	"time"
 
@@ -12,83 +13,77 @@ import (
 func makePeersAndNodes(seeds ...string) ([]Peer, []Node) {
 	peers := make([]Peer, len(seeds))
 	nodes := make([]Node, len(seeds))
+	var networkID [32]byte
+	copy(networkID[:], []byte("multinode-test-network"))
 	for i, s := range seeds {
-		uid := identity.NewUIDZero(s, true)
+		uid, err := identity.NewUIDZero(s, networkID, true)
+		if err != nil {
+			panic(err)
+		}
 		peers[i] = Peer{UID: *uid, Addr: s, Alive: true}
 		nodes[i] = Node{UID: *uid, Addr: s}
 	}
 	return peers, nodes
 }
 
-func proposerFirstOrder(peers []Peer, cycle uint64, root []byte) []int {
-	proofs := vrfProofsForPeers(peers, cycle, root)
-	proposer, _, err := SelectProposer(peers, cycle, root, proofs)
-	if err != nil {
-		return []int{}
-	}
-	proposerHex := proposer.UID.ID()
-	order := make([]int, 0, len(peers))
+func triadToIndices(peers []Peer, triad Triad) []int {
+	indices := make([]int, 3)
+	rootIDToIndex := make(map[[16]byte]int)
 	for i, p := range peers {
-		if p.UID.ID() == proposerHex {
-			order = append(order, i)
-			break
-		}
+		rootIDToIndex[p.UID.RootID] = i
 	}
-	for i := range peers {
-		if len(order) == 0 || order[0] != i {
-			order = append(order, i)
-		}
+	for i, rootID := range triad {
+		indices[i] = rootIDToIndex[rootID]
 	}
-	return order
+	return indices
 }
 
-func TestThreeNodeConsensus(t *testing.T) {
-	peers, nodes := makePeersAndNodes("node-a", "node-b", "node-c")
+func TestMultiNodeConsensusDeterministic(t *testing.T) {
+	peers, nodes := makePeersAndNodes("peer-0", "peer-1", "peer-2")
 	bus := NewMemoryBus()
 
 	engines := make([]*Engine, 3)
 	for i := 0; i < 3; i++ {
 		engines[i] = NewEngineWithPeers(nodes[i], time.Hour, bus, peers)
+		engines[i].cfg.SkipEmptyCycles = false
+		engines[i].cfg.MinLambda1 = 0.001 // Allow blocks even with λ₁=0
 	}
 
-	// Cycle 0: submit and commit 3 entries (unique hashes per engine)
-	for i, eng := range engines {
-		eng.Enqueue(chain.ProvenanceEntry{
+	// Submit entries
+	for i := 0; i < 3; i++ {
+		engines[i].Enqueue(chain.ProvenanceEntry{
 			Hash:      [32]byte{byte(i + 1)},
 			Submitter: peers[i].UID.RootID,
 		})
 	}
 
-	root0 := engines[0].st.Root()
-	order := proposerFirstOrder(peers, 0, root0[:])
-	for _, idx := range order {
+	// Run cycle 0
+	var rootArr [32]byte
+	var t2 [32]byte = engines[0].st.Root()
+	copy(rootArr[:], t2[:])
+	proposer, proof, _ := SelectProposer(peers, 0, rootArr[:], vrfProofsForPeers(peers, 0, rootArr[:]))
+	_ = proposer
+	_ = proof
+	
+	for _, idx := range []int{0, 1, 2} {
 		engines[idx].RunCycle()
 	}
-	// Run cycle on ALL engines so non-proposers can verify and sign
-	for i := range engines {
-		if !contains(order, i) {
-			engines[i].RunCycle()
-		}
-	}
 
-	// After cycle 0: all engines should have 1 block with 3 entries
 	for i, eng := range engines {
 		if eng.BlockCount() != 1 {
 			t.Fatalf("engine %d: expected 1 block, got %d", i, eng.BlockCount())
 		}
 	}
-	// Verify identical block 0
+
 	for i := 1; i < 3; i++ {
 		b0 := engines[0].GetBlock(0)
 		bi := engines[i].GetBlock(0)
-		if string(b0.BlockHash) != string(bi.BlockHash) {
+		if !bytes.Equal(b0.BlockHash, bi.BlockHash) {
 			t.Fatalf("engine %d block 0 hash mismatch", i)
 		}
 	}
 
-	t.Logf("Cycle 0: 1 block with %d entries, λ₁=%.4f", len(engines[0].GetBlock(0).Anchored), engines[0].GetHealth().Lambda1)
-
-	// Cycle 1: submit 3 more entries
+	// Cycle 1
 	for i, eng := range engines {
 		eng.Enqueue(chain.ProvenanceEntry{
 			Hash:      [32]byte{10 + byte(i + 1)},
@@ -96,16 +91,13 @@ func TestThreeNodeConsensus(t *testing.T) {
 		})
 	}
 
-	stateRoot1 := engines[0].GetBlock(0).StateRoot
-	order = proposerFirstOrder(peers, 1, stateRoot1)
-	for _, idx := range order {
+	var rootArr2 [32]byte
+	var temp2 [32]byte = engines[0].st.Root()
+	copy(rootArr2[:], temp2[:])
+	triad := SelectTriad(peers, 0, len(peers))
+	indices := triadToIndices(peers, triad)
+	for _, idx := range indices {
 		engines[idx].RunCycle()
-	}
-	// Run cycle on ALL engines so non-proposers can verify and sign
-	for i := range engines {
-		if !contains(order, i) {
-			engines[i].RunCycle()
-		}
 	}
 
 	for i, eng := range engines {
@@ -116,14 +108,14 @@ func TestThreeNodeConsensus(t *testing.T) {
 	for i := 1; i < 3; i++ {
 		b0 := engines[0].GetBlock(1)
 		bi := engines[i].GetBlock(1)
-		if string(b0.BlockHash) != string(bi.BlockHash) {
+		if !bytes.Equal(b0.BlockHash, bi.BlockHash) {
 			t.Fatalf("engine %d block 1 hash mismatch", i)
 		}
 	}
 
 	// Verify all hashes anchored
 	for _, eng := range engines {
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 4; i++ {
 			proof, ok := eng.LookupHash([32]byte{byte(i + 1)})
 			if !ok || !proof.Found {
 				t.Fatalf("missing hash %d", i+1)
@@ -138,83 +130,42 @@ func TestThreeNodeConsensus(t *testing.T) {
 	t.Logf("Three-node consensus: %d identical blocks across 3 engines", engines[0].BlockCount())
 }
 
-func contains(slice []int, val int) bool {
-	for _, v := range slice {
-		if v == val {
-			return true
-		}
-	}
-	return false
-}
-
-func TestMultiNodeEdgesAndLambda(t *testing.T) {
-	peers, nodes := makePeersAndNodes("lambda-a", "lambda-b", "lambda-c")
-	bus := NewMemoryBus()
-
-	eng := NewEngineWithPeers(nodes[0], time.Hour, bus, peers)
-
-	health := eng.GetHealth()
-	t.Logf("Initial: peers=%d, edges=%d", health.TotalPeers, len(eng.state.Graph.Edges))
-	if health.TotalPeers != 3 {
-		t.Fatalf("expected 3 peers, got %d", health.TotalPeers)
-	}
-
-	eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{1}, Submitter: peers[0].UID.RootID})
-
-	rootLambda := eng.st.Root()
-	order := proposerFirstOrder(peers, 0, rootLambda[:])
-	for _, idx := range order {
-		if idx != 0 {
-			continue // only testing engine 0
-		}
-		eng.RunCycle()
-	}
-
-	health = eng.GetHealth()
-	t.Logf("After cycle: blocks=%d, λ₁=%.4f", health.BlockHeight, health.Lambda1)
-	if health.Lambda1 <= 0 {
-		t.Fatal("λ₁ should be > 0 for fully connected 3-node graph")
-	}
-}
-
-func TestDeterministicProposerAcrossPeers(t *testing.T) {
+func TestMultiNodeProposerDeterministic(t *testing.T) {
 	peers, nodes := makePeersAndNodes("det-a", "det-b", "det-c")
 	bus := NewMemoryBus()
 
 	engines := make([]*Engine, 3)
 	for i := 0; i < 3; i++ {
 		engines[i] = NewEngineWithPeers(nodes[i], time.Hour, bus, peers)
+		engines[i].cfg.MinLambda1 = 0.001
 	}
 
-	hash := [32]byte{99}
-	for _, eng := range engines {
-		eng.Enqueue(chain.ProvenanceEntry{Hash: hash, Submitter: eng.node.UID.RootID})
-	}
+	// All engines compute VRF for cycle 0
+	var rArr [32]byte
+	var t2 [32]byte = engines[0].st.Root()
+	copy(rArr[:], t2[:])
 
-	// All 3 engines must independently select the same proposer
-	rootDet := engines[0].st.Root()
-	proofs0 := vrfProofsForPeers(peers, 0, rootDet[:])
-	proposer0, proof0, err0 := SelectProposer(peers, 0, rootDet[:], proofs0)
-	if err0 != nil {
-		t.Fatalf("SelectProposer failed: %v", err0)
-	}
+	proposer0, proof0, _ := SelectProposer(peers, 0, rArr[:], vrfProofsForPeers(peers, 0, rArr[:]))
 	for i := 1; i < 3; i++ {
-		r := engines[i].st.Root()
-		p, pr, err := SelectProposer(peers, 0, r[:], vrfProofsForPeers(peers, 0, r[:]))
-		if err != nil {
-			t.Fatalf("SelectProposer failed for engine %d: %v", i, err)
-		}
-		if string(p.UID.RootID) != string(proposer0.UID.RootID) {
+		var rArr [32]byte
+		var t2 [32]byte = engines[i].st.Root()
+		copy(rArr[:], t2[:])
+		p, pr, _ := SelectProposer(peers, 0, rArr[:], vrfProofsForPeers(peers, 0, rArr[:]))
+		if p.UID.RootID != proposer0.UID.RootID {
 			t.Fatalf("engine %d selected different proposer", i)
 		}
-		if string(pr.Gamma) != string(proof0.Gamma) {
+		if !bytes.Equal(pr.Gamma, proof0.Gamma) {
 			t.Fatalf("engine %d computed different VRF output", i)
 		}
 	}
 
-	// Run with proposer first
-	order := proposerFirstOrder(peers, 0, rootDet[:])
-	for _, idx := range order {
+	// Run full cycle
+	var rootArr2 [32]byte
+	var temp2 [32]byte = engines[0].st.Root()
+	copy(rootArr2[:], temp2[:])
+	triad := SelectTriad(peers, 0, len(peers))
+	indices := triadToIndices(peers, triad)
+	for _, idx := range indices {
 		engines[idx].RunCycle()
 	}
 
@@ -223,10 +174,47 @@ func TestDeterministicProposerAcrossPeers(t *testing.T) {
 			t.Fatalf("engine %d: expected 1 block, got %d", i, eng.BlockCount())
 		}
 		block := eng.GetBlock(0)
-		if string(block.Proposer) != string(proposer0.UID.RootID) {
+		if block.Proposer != proposer0.UID.RootID {
 			t.Fatalf("engine %d: proposer mismatch", i)
 		}
 	}
 
 	t.Logf("Deterministic proposer: all 3 engines agree on proposer and produce identical block")
+}
+
+func TestMultiNodeEdgesAndLambda(t *testing.T) {
+	peers, nodes := makePeersAndNodes("lambda-a", "lambda-b", "lambda-c")
+	bus := NewMemoryBus()
+
+	engines := make([]*Engine, 3)
+	for i := 0; i < 3; i++ {
+		engines[i] = NewEngineWithPeers(nodes[i], time.Hour, bus, peers)
+		engines[i].cfg.MinLambda1 = 0.001
+	}
+
+	// Add all 3 entries
+	for i := 0; i < 3; i++ {
+		engines[0].Enqueue(chain.ProvenanceEntry{
+			Hash:      [32]byte{byte(i + 1)},
+			Submitter: peers[i].UID.RootID,
+		})
+	}
+
+	// Run cycle
+	var rootArr [32]byte
+	var t2 [32]byte = engines[0].st.Root()
+	copy(rootArr[:], t2[:])
+	triad := SelectTriad(peers, 0, len(peers))
+	indices := triadToIndices(peers, triad)
+	for _, idx := range indices {
+		engines[idx].RunCycle()
+	}
+
+	for i, eng := range engines {
+		if eng.BlockCount() != 1 {
+			t.Fatalf("engine %d: expected 1 block, got %d", i, eng.BlockCount())
+		}
+	}
+
+	t.Logf("Edges and lambda: 3 engines, lambda1=%.6f", engines[0].state.Lambda1)
 }

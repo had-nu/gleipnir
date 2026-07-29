@@ -17,19 +17,19 @@ func init() {
 	}
 }
 
-func (u *UIDZeroSoulbound) CalculateFinalDigest() ([]byte, error) {
-	origDigest := u.FinalDigest
-	u.FinalDigest = nil
+func (u *UIDZeroSoulbound) CalculateFinalDigest() ([32]byte, error) {
+	var zeroDigest [32]byte
+	u.FinalDigest = zeroDigest
 
 	data, err := deterministicMode.Marshal(u)
 
-	u.FinalDigest = origDigest
+	u.FinalDigest = zeroDigest
 
 	if err != nil {
-		return nil, err
+		return [32]byte{}, err
 	}
 
-	return Hash(data), nil
+	return Blake3Hash(data), nil
 }
 
 func (u *UIDZeroSoulbound) Seal() error {

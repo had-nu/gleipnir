@@ -41,12 +41,12 @@ func (m *SubChainManager) newSMT() *smt.SparseMerkleTree {
 	return smt.New(m.engine.cfg.SMTDepth)
 }
 
-func (m *SubChainManager) Register(name string, owner []byte) (chain.SubChainID, error) {
+func (m *SubChainManager) Register(name string, owner [16]byte) (chain.SubChainID, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	now := time.Now().UnixNano()
-	seed := append([]byte(name), owner...)
+	seed := append([]byte(name), owner[:]...)
 	seed = binary.LittleEndian.AppendUint64(seed, uint64(now))
 	var id chain.SubChainID
 	copy(id[:], identity.Hash(seed))

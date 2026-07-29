@@ -1,11 +1,11 @@
-// Protocol types for the Immutable Provenance Chain (IPC) v1.
+// Protocol types for the Immutable Provenance Chain (IPC) v2.0.
 // Package chain defines the IPC block, entry, and Anchorer interface.
 package chain
 
 import "context"
 
 type Anchorer interface {
-	Submit(ctx context.Context, hash [32]byte, submitter []byte, label string) (*Ticket, error)
+	Submit(ctx context.Context, hash [32]byte, submitter [16]byte, label string) (*Ticket, error)
 
 	WaitForAnchor(ctx context.Context, hash [32]byte) (*AnchorProof, error)
 
@@ -17,20 +17,20 @@ type Anchorer interface {
 }
 
 type Ticket struct {
-	Hash          [32]byte
-	Status        string
-	BlockIndex    uint64
-	BlockTime     int64
+	Hash       [32]byte
+	Status     string
+	BlockIndex uint64
+	BlockTime  int64
 }
 
 type AnchorProof struct {
-	Found         bool
-	BlockIndex    uint64
-	BlockTime     int64
-	StateRoot     []byte
-	SMTProof      []byte
-	Submitter     []byte
-	Label         string
+	Found      bool
+	BlockIndex uint64
+	BlockTime  int64
+	StateRoot  []byte
+	SMTProof   []byte
+	Submitter  [16]byte
+	Label      string
 }
 
 type NetworkHealth struct {

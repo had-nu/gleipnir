@@ -11,7 +11,7 @@ func (id SubChainID) String() string {
 type SubChainDescriptor struct {
 	ID        SubChainID
 	Name      string
-	Owner     []byte
+	Owner     [16]byte
 	Genesis   [32]byte
 	CreatedAt int64
 	Active    bool

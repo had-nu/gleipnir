@@ -12,7 +12,9 @@ import (
 )
 
 func testPeer(id string) Peer {
-	uid := identity.NewUIDZero("test-"+id, true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid, _ := identity.NewUIDZero("test-"+id, networkID, true)
 	return Peer{UID: *uid, Addr: id, Alive: true}
 }
 
@@ -182,7 +184,9 @@ func testEq(a, b []byte) bool {
 // --- P1: cycle advancement tests ---
 
 func newTestEngine() *Engine {
-	uid := identity.NewUIDZero("test-self", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid, _ := identity.NewUIDZero("test-self", networkID, true)
 	node := Node{UID: *uid, Addr: "self"}
 	eng := NewEngine(node, time.Hour)
 	uidHex := uid.ID()
@@ -211,7 +215,8 @@ func addEdgesForNodes(eng *Engine) {
 
 func addPending(eng *Engine) {
 	eng.pending = append(eng.pending, chain.ProvenanceEntry{
-		Hash: [32]byte{1},
+		Hash:      [32]byte{1},
+		Submitter: [16]byte{},
 	})
 }
 
@@ -330,9 +335,9 @@ func TestRunCycleAlwaysAdvancesCycle(t *testing.T) {
 
 			if tt.wantBlock && len(eng.blocks) > 0 {
 				last := eng.blocks[len(eng.blocks)-1]
-				if !bytes.Equal(last.Proposer, eng.node.UID.RootID) {
-					t.Errorf("block proposer mismatch: %s", tt.desc)
-				}
+if !bytes.Equal(last.Proposer[:], eng.node.UID.RootID[:]) {
+				t.Errorf("block proposer mismatch: %s", tt.desc)
+			}
 			}
 		})
 	}
@@ -364,11 +369,11 @@ func TestSingleNodeRunCycle(t *testing.T) {
 	}
 
 	last := eng.blocks[len(eng.blocks)-1]
-	if len(last.Sigs) == 0 || len(last.Sigs[0]) == 0 {
-		t.Error("Sigs must be populated (single signature)")
+	if len(last.PrepareSigs) == 0 || len(last.PrepareSigs[0]) == 0 {
+		t.Error("PrepareSigs must be populated (single signature)")
 	}
 	// In single-node mode, we expect exactly 1 signature
-	if len(last.Sigs) != 1 {
-		t.Errorf("expected exactly 1 signature in single-node mode, got %d", len(last.Sigs))
+	if len(last.PrepareSigs) != 1 {
+		t.Errorf("expected exactly 1 signature in single-node mode, got %d", len(last.PrepareSigs))
 	}
 }

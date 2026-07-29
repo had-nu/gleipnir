@@ -45,11 +45,11 @@ type APILimits struct {
 }
 
 // ValidateEntry validates a submission entry against the given limits.
-func ValidateEntry(hash [32]byte, submitter []byte, label string, limits APILimits) error {
+func ValidateEntry(hash [32]byte, submitter [16]byte, label string, limits APILimits) error {
 	if IsZeroHash(hash) {
 		return WrapValidationError(ErrCodeInvalidHash, "invalid hash", ErrInvalidHash)
 	}
-	if len(submitter) == 0 {
+	if submitter == [16]byte{} {
 		return WrapValidationError(ErrCodeInvalidSubmitter, "invalid submitter", ErrInvalidSubmitter)
 	}
 	if len(label) > limits.MaxLabelLen {

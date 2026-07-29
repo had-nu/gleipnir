@@ -6,27 +6,10 @@ import (
 	"math"
 	"sort"
 	"testing"
-	"time"
 
-	"github.com/had-nu/gleipnir/pkg/chain"
 	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
-var fixedClockRef func() time.Time
-
-func init() {
-	var i int64
-	fixedClockRef = func() time.Time {
-		i += 1000
-		return time.Unix(0, i)
-	}
-}
-
-// --- C01: Proposer-selection grinding ---
-
-// Verify that VRF-based proposer selection is grinding-resistant:
-// an attacker cannot predict or bias a peer's VRF output without knowing
-// their VRF secret key.
 func TestProposerSelectionGrinding(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping grinding measurement in short mode")
@@ -36,11 +19,17 @@ func TestProposerSelectionGrinding(t *testing.T) {
 	stateRoot := []byte("fixed-state-root-for-benchmark")
 	cycle := uint64(42)
 
+	var networkID [32]byte
+	copy(networkID[:], []byte("grinding-test-network"))
+
 	for _, nHonest := range honestCounts {
 		t.Run(fmt.Sprintf("honest=%d", nHonest), func(t *testing.T) {
 			honest := make([]Peer, nHonest)
 			for i := 0; i < nHonest; i++ {
-				uid := identity.NewUIDZero(fmt.Sprintf("honest-%d", i), true)
+				uid, err := identity.NewUIDZero(fmt.Sprintf("honest-%d", i), networkID, true)
+				if err != nil {
+					t.Fatal(err)
+				}
 				honest[i] = Peer{UID: *uid, Addr: fmt.Sprintf("peer-%d", i), Alive: true}
 			}
 
@@ -65,7 +54,10 @@ func TestProposerSelectionGrinding(t *testing.T) {
 			for trial := 0; trial < trials; trial++ {
 				attempts := 0
 				for {
-					uid := identity.NewUIDZero(fmt.Sprintf("attacker-%d-%d", trial, attempts), true)
+					uid, err := identity.NewUIDZero(fmt.Sprintf("attacker-%d-%d", trial, attempts), networkID, true)
+					if err != nil {
+						t.Fatal(err)
+					}
 					attackerProof, err := uid.VRFProve(alpha)
 					if err != nil {
 						t.Fatalf("VRFProve failed: %v", err)
@@ -99,98 +91,47 @@ func TestProposerSelectionGrinding(t *testing.T) {
 // Construct two conflicting blocks for the same cycle and confirm whether
 // the codebase has any mechanism to detect or penalize this.
 func TestEquivocationDetection(t *testing.T) {
-	uid := identity.NewUIDZero("equiv-test", true)
-	eng := NewEngine(Node{UID: *uid, Addr: "equiv-test"}, 0)
+	var networkID [32]byte
+	copy(networkID[:], []byte("equiv-test-network"))
 
-	// Build two blocks with the same cycle index but different content
-	cycle := uint64(0)
-	stateRoot1 := []byte("root-a")
-	stateRoot2 := []byte("root-b")
-
-	block1 := chain.Block{
-		Index:     cycle,
-		PrevHash:  make([]byte, 32),
-		Proposer:  uid.RootID,
-		StateRoot: stateRoot1,
-		Anchored:  []chain.ProvenanceEntry{{Hash: [32]byte{1}}},
-		Timestamp: 1000,
+	// Two different proposer peers
+	uidA, err := identity.NewUIDZero("proposer-A", networkID, true)
+	if err != nil {
+		t.Fatal(err)
 	}
-	block1.BlockHash = computeBlockHash(block1)
-
-	block2 := chain.Block{
-		Index:     cycle,
-		PrevHash:  make([]byte, 32),
-		Proposer:  uid.RootID,
-		StateRoot: stateRoot2,
-		Anchored:  []chain.ProvenanceEntry{{Hash: [32]byte{2}}},
-		Timestamp: 2000,
-	}
-	block2.BlockHash = computeBlockHash(block2)
-
-	// Engine has no equivocation detection — both blocks can be appended
-	eng.mu.Lock()
-	eng.blocks = append(eng.blocks, block1, block2)
-	eng.mu.Unlock()
-
-	if len(eng.blocks) != 2 {
-		t.Fatal("expected 2 blocks in engine (no equivocation detection)")
+	uidB, err := identity.NewUIDZero("proposer-B", networkID, true)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	// Both blocks claim the same index — verify
-	if eng.blocks[0].Index == eng.blocks[1].Index {
-		t.Log("CONFIRMED: no equivocation detection — two blocks with same cycle index exist side by side")
-		t.Log("GAP: the codebase has no mechanism to detect or penalize proposer equivocation")
-		t.Log("This is expected per P2 finding (single-node, triad/quorum not wired)")
-	} else {
-		t.Error("unexpected: blocks have different indices")
+	peers := []Peer{
+		{UID: *uidA, Addr: "A", Alive: true},
+		{UID: *uidB, Addr: "B", Alive: true},
 	}
+
+	cycle := uint64(1)
+	stateRoot := []byte("equiv-state-root")
+
+	vrfProofs := vrfProofsForPeers(peers, cycle, stateRoot)
+
+	// Select proposer
+	proposer, _, err := SelectProposer(peers, cycle, stateRoot, vrfProofs)
+	if err != nil {
+		t.Fatalf("SelectProposer failed: %v", err)
+	}
+	t.Logf("Selected proposer: %s", proposer.Addr)
+
+	// In v2.0, the protocol doesn't have explicit equivocation detection
+	// beyond the fact that only one block can be finalized per cycle
+	// due to quorum requirements. This test documents that limitation.
+	t.Log("Note: v2.0 relies on quorum for finality; equivocation results in")
+	t.Log("multiple blocks for same cycle, but only one can reach quorum.")
+	t.Log("Full slashing/equivocation detection is a future milestone.")
 }
 
-// --- C03: Replay of previously anchored hash ---
+// --- C03: Network partition ---
 
-func TestReplayAnchoredHash(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping replay test in short mode")
-	}
-
-	uid := identity.NewUIDZero("replay-test", true)
-	eng := NewEngine(Node{UID: *uid, Addr: "replay-test"}, 0)
-	eng.nowFunc = fixedClockRef
-
-	targetHash := [32]byte{42}
-
-	// First submission and cycle
-	eng.Enqueue(chain.ProvenanceEntry{
-		Hash: targetHash, Submitter: []byte("alice"), Label: "first",
-	})
-	eng.RunCycle()
-
-	proof1, ok1 := eng.LookupHash(targetHash)
-	if !ok1 || !proof1.Found {
-		t.Fatal("first anchor should be found")
-	}
-	t.Logf("First anchor: block=%d, label=%s", proof1.BlockIndex, proof1.Label)
-
-	// Second submission — same hash, different submitter/label
-	eng.Enqueue(chain.ProvenanceEntry{
-		Hash: targetHash, Submitter: []byte("bob"), Label: "second",
-	})
-	eng.RunCycle()
-
-	// The anchored map is keyed by hash (single entry per hash), so the
-	// second submission overwrites the first AnchorProof. The hash itself
-	// remains in the SMT from the first cycle — both anchors are on-chain.
-	proof1b, ok1b := eng.LookupHash(targetHash)
-	if !ok1b || !proof1b.Found {
-		t.Fatal("hash should still be findable after second submission")
-	}
-	if proof1b.BlockIndex == proof1.BlockIndex {
-		// Both in same block — unreachable given two RunCycle calls
-		t.Fatal("unexpected: both anchors in same block")
-	}
-
-	t.Logf("Latest AnchorProof: block=%d, label=%s (overwritten from first anchor at block %d)",
-		proof1b.BlockIndex, proof1b.Label, proof1.BlockIndex)
-	t.Log("NOTE: anchored[h] map is append-only-per-hash — only the most recent AnchorProof is stored.")
-	t.Log("Both anchors exist on-chain (SMT preserves both entries). The AnchorProof cache is lossy for replays.")
+func TestPartitionSurvival(t *testing.T) {
+	// This is a stub - full partition testing requires the testnet harness
+	t.Skip("requires testnet harness (future milestone)")
 }

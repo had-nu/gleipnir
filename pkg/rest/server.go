@@ -299,7 +299,7 @@ func (s *Server) authenticate(r *http.Request) (string, error) {
 	}
 
 	signed := string(body) + "||" + r.Method + "||" + r.URL.Path + "||" + tsStr
-	if !identity.VerifyDilithium(uid.PublicKey, []byte(signed), sig) {
+	if !identity.VerifyDilithium(uid.PublicKey[:], []byte(signed), sig) {
 		return "", errors.New(errInvalidSig)
 	}
 
@@ -393,10 +393,11 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 
 	entry := chain.ProvenanceEntry{
 		Hash:      h,
-		Submitter: []byte(req.Submitter),
+		Submitter: [16]byte{},
 		Timestamp: time.Now().UnixNano(),
 		Label:     req.Label,
 	}
+	copy(entry.Submitter[:], []byte(req.Submitter))
 
 	if err := s.engine.Enqueue(entry); err != nil {
 		var ve *validation.ValidationError
@@ -429,7 +430,7 @@ func (s *Server) handleSubmit(w http.ResponseWriter, r *http.Request) {
 		"block_time":  proof.BlockTime,
 		"state_root":  hex.EncodeToString(proof.StateRoot),
 		"smt_proof":   hex.EncodeToString(proof.SMTProof),
-		"submitter":   string(proof.Submitter),
+		"submitter":   hex.EncodeToString(proof.Submitter[:]),
 		"label":       proof.Label,
 	}))
 }
@@ -460,7 +461,7 @@ func (s *Server) handleVerify(w http.ResponseWriter, r *http.Request) {
 		"block_time":  proof.BlockTime,
 		"state_root":  hex.EncodeToString(proof.StateRoot),
 		"smt_proof":   hex.EncodeToString(proof.SMTProof),
-		"submitter":   string(proof.Submitter),
+		"submitter":   hex.EncodeToString(proof.Submitter[:]),
 		"label":       proof.Label,
 	}))
 }
@@ -483,15 +484,15 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 	for i, e := range block.Anchored {
 		entry := map[string]interface{}{
 			"hash":      hex.EncodeToString(e.Hash[:]),
-			"submitter": string(e.Submitter),
+			"submitter": hex.EncodeToString(e.Submitter[:]),
 			"timestamp": e.Timestamp,
 			"label":     e.Label,
 		}
-		if len(e.Approver) > 0 {
-			entry["approver"] = string(e.Approver)
+		if e.Approver != nil {
+			entry["approver"] = hex.EncodeToString(e.Approver[:])
 		}
-		if len(e.Reference) > 0 {
-			entry["reference"] = hex.EncodeToString(e.Reference)
+		if e.Reference != nil {
+			entry["reference"] = hex.EncodeToString(e.Reference[:])
 		}
 		if len(e.Signature) > 0 {
 			entry["signature"] = hex.EncodeToString(e.Signature)
@@ -499,21 +500,21 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 		entries[i] = entry
 	}
 
-	sigs := make([]string, len(block.Sigs))
-	for i, sig := range block.Sigs {
+	sigs := make([]string, len(block.PrepareSigs))
+	for i, sig := range block.PrepareSigs {
 		sigs[i] = hex.EncodeToString(sig)
 	}
 
 	validators := make([]string, len(block.Validators))
 	for i, v := range block.Validators {
-		validators[i] = hex.EncodeToString(v)
+		validators[i] = hex.EncodeToString(v.Dilithium3PK[:])
 	}
 
 	writeJSON(w, http.StatusOK, apiOK(map[string]interface{}{
 		"index":       block.Index,
 		"prev_hash":   hex.EncodeToString(block.PrevHash),
 		"state_root":  hex.EncodeToString(block.StateRoot),
-		"proposer":    hex.EncodeToString(block.Proposer),
+		"proposer":    hex.EncodeToString(block.Proposer[:]),
 		"anchored":    entries,
 		"lambda1":     block.Lambda1,
 		"timestamp":   block.Timestamp,

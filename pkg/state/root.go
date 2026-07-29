@@ -13,7 +13,7 @@ type networkStateForRoot struct {
 	Lambda1  float64              `cbor:"3,keyasint"`
 }
 
-func ComputeSupervisionRoot(s NetworkState) []byte {
+func ComputeSupervisionRoot(s NetworkState) [32]byte {
 	partial := networkStateForRoot{
 		Cycle:   s.Cycle,
 		Nodes:   s.Nodes,
@@ -25,6 +25,5 @@ func ComputeSupervisionRoot(s NetworkState) []byte {
 	if err != nil {
 		panic(err)
 	}
-	sum := blake3.Sum256(data)
-	return sum[:]
+	return blake3.Sum256(data)
 }

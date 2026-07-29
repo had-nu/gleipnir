@@ -74,20 +74,31 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 	var h [32]byte
 	copy(h[:], req.Hash)
 
+	var submitter [16]byte
+	copy(submitter[:], req.Submitter)
+
+	var approver *[16]byte
+	if len(req.Approver) > 0 {
+		var a [16]byte
+		copy(a[:], req.Approver)
+		approver = &a
+	}
+
+	var reference *[32]byte
+	if len(req.Reference) > 0 {
+		var r [32]byte
+		copy(r[:], req.Reference)
+		reference = &r
+	}
+
 	entry := chain.ProvenanceEntry{
 		Hash:      h,
-		Submitter: req.Submitter,
+		Submitter: submitter,
 		Timestamp: req.Timestamp,
 		Label:     req.Label,
-	}
-	if len(req.Approver) > 0 {
-		entry.Approver = req.Approver
-	}
-	if len(req.Reference) > 0 {
-		entry.Reference = req.Reference
-	}
-	if len(req.Signature) > 0 {
-		entry.Signature = req.Signature
+		Approver:  approver,
+		Reference: reference,
+		Signature: req.Signature,
 	}
 
 	if err := s.engine.Enqueue(entry); err != nil {
@@ -129,7 +140,7 @@ func (s *Server) authenticateSubmit(req *pb.SubmitRequest) error {
 	signed = append(signed, req.Submitter...)
 	signed = append(signed, ts...)
 	signed = append(signed, req.Label...)
-	if !identity.VerifyDilithium(uid.PublicKey, signed, req.Signature) {
+	if !identity.VerifyDilithium(uid.PublicKey[:], signed, req.Signature) {
 		return validation.WrapValidationError(
 			validation.ErrCodeInvalidSignature,
 			"signature does not match submitter",
@@ -154,7 +165,7 @@ func (s *Server) WaitForAnchor(ctx context.Context, req *pb.WaitRequest) (*pb.An
 		BlockTime:  proof.BlockTime,
 		StateRoot:  proof.StateRoot,
 		SmtProof:   proof.SMTProof,
-		Submitter:  proof.Submitter,
+		Submitter:  proof.Submitter[:],
 		Label:      proof.Label,
 	}, nil
 }
@@ -174,7 +185,7 @@ func (s *Server) VerifyHash(ctx context.Context, req *pb.VerifyRequest) (*pb.Anc
 		BlockTime:  proof.BlockTime,
 		StateRoot:  proof.StateRoot,
 		SmtProof:   proof.SMTProof,
-		Submitter:  proof.Submitter,
+		Submitter:  proof.Submitter[:],
 		Label:      proof.Label,
 	}, nil
 }
@@ -215,39 +226,36 @@ func (s *Server) GetBlock(ctx context.Context, req *pb.BlockRequest) (*pb.Block,
 
 	pbEntries := make([]*pb.ProvenanceEntry, len(b.Anchored))
 	for i, e := range b.Anchored {
+		var approver, reference []byte
+		if e.Approver != nil {
+			approver = e.Approver[:]
+		}
+		if e.Reference != nil {
+			reference = e.Reference[:]
+		}
 		pbe := &pb.ProvenanceEntry{
 			Hash:      e.Hash[:],
-			Submitter: e.Submitter,
+			Submitter: e.Submitter[:],
 			Timestamp: e.Timestamp,
 			Label:     e.Label,
-		}
-		if len(e.Approver) > 0 {
-			pbe.Approver = e.Approver
-		}
-		if len(e.Reference) > 0 {
-			pbe.Reference = e.Reference
-		}
-		if len(e.Signature) > 0 {
-			pbe.Signature = e.Signature
+			Approver:  approver,
+			Reference: reference,
+			Signature: e.Signature,
 		}
 		pbEntries[i] = pbe
 	}
 
-	pbTriad := make([][]byte, 3)
-	copy(pbTriad, b.Triad[:])
-
-	pbSigs := make([][]byte, 3)
-	copy(pbSigs, b.Sigs[:])
+	pbSigs := make([][]byte, len(b.PrepareSigs))
+	copy(pbSigs, b.PrepareSigs)
 
 	return &pb.Block{
-		Index:     b.Index,
-		PrevHash:  b.PrevHash,
-		StateRoot: b.StateRoot,
-		Proposer:  b.Proposer,
-		Triad:     pbTriad,
-		Anchored:  pbEntries,
-		Lambda1:   b.Lambda1,
-		Timestamp: b.Timestamp,
-		Sigs:      pbSigs,
+		Index:        b.Index,
+		PrevHash:     b.PrevHash,
+		StateRoot:    b.StateRoot,
+		Proposer:     b.Proposer[:],
+		Anchored:     pbEntries,
+		Lambda1:      b.Lambda1,
+		Timestamp:    b.Timestamp,
+		Sigs:         pbSigs,
 	}, nil
 }

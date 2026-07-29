@@ -38,11 +38,11 @@ func (e *Engine) apiLimitsLocked() APILimits {
 	return e.apiLimits
 }
 
-func validateEntry(hash [32]byte, submitter []byte, label string, cfg APILimits) error {
+func validateEntry(hash [32]byte, submitter [16]byte, label string, cfg APILimits) error {
 	if validation.IsZeroHash(hash) {
 		return validation.WrapValidationError(validation.ErrCodeInvalidHash, "invalid hash", ErrInvalidHash)
 	}
-	if len(submitter) == 0 {
+	if submitter == [16]byte{} {
 		return validation.WrapValidationError(validation.ErrCodeInvalidSubmitter, "invalid submitter", ErrInvalidSubmitter)
 	}
 	if len(label) > cfg.MaxLabelLen {

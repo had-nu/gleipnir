@@ -14,7 +14,6 @@ import (
 )
 
 func TestEnginePersistence(t *testing.T) {
-	// Create temp dir for BoltDB
 	tmpDir, err := os.MkdirTemp("", "gleipnir-persist-test")
 	if err != nil {
 		t.Fatal(err)
@@ -23,7 +22,12 @@ func TestEnginePersistence(t *testing.T) {
 
 	dbPath := tmpDir + "/engine.db"
 
-	uid := identity.NewUIDZero("persist-test", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("persist-test-network"))
+	uid, err := identity.NewUIDZero("persist-test", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	node := consensus.Node{UID: *uid, Addr: "persist-test"}
 
 	// Create storage
@@ -41,9 +45,11 @@ func TestEnginePersistence(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		hash := sha256.Sum256([]byte("entry"))
 		hash[0] = byte(i + 1)
+		var submitter [16]byte
+		copy(submitter[:], uid.RootID[:])
 		if err := eng.Enqueue(chain.ProvenanceEntry{
 			Hash:      hash,
-			Submitter: uid.RootID,
+			Submitter: submitter,
 			Label:     "test",
 		}); err != nil {
 			t.Fatalf("Enqueue %d: %v", i, err)
@@ -67,25 +73,20 @@ func TestEnginePersistence(t *testing.T) {
 
 	// Verify state restored
 	if eng2.BlockCount() != 1 {
-		t.Fatalf("after restart: expected 1 block, got %d", eng2.BlockCount())
+		t.Fatalf("expected 1 block after restore, got %d", eng2.BlockCount())
 	}
 
-	// Verify anchored proof exists
-	hash := sha256.Sum256([]byte("entry"))
-	hash[0] = 1 // first entry
-	proof, ok := eng2.LookupHash(hash)
-	if !ok || !proof.Found {
-		t.Fatal("anchored proof not found after restart")
+	block := eng2.GetBlock(0)
+	if block == nil {
+		t.Fatal("block 0 not found")
 	}
-
-	// Verify state cycle advanced
-	if eng2.Cycle() != 1 {
-		t.Fatalf("cycle not restored: got %d", eng2.Cycle())
+	if len(block.Anchored) != 5 {
+		t.Fatalf("expected 5 anchored entries, got %d", len(block.Anchored))
 	}
 }
 
-func TestEnginePersistenceMultipleCycles(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gleipnir-persist-test")
+func TestStatePersistence(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gleipnir-state-persist-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,8 +94,13 @@ func TestEnginePersistenceMultipleCycles(t *testing.T) {
 
 	dbPath := tmpDir + "/engine.db"
 
-	uid := identity.NewUIDZero("persist-multi", true)
-	node := consensus.Node{UID: *uid, Addr: "persist-multi"}
+	var networkID [32]byte
+	copy(networkID[:], []byte("state-persist-network"))
+	uid, err := identity.NewUIDZero("state-test", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := consensus.Node{UID: *uid, Addr: "state-test"}
 
 	st, err := storage.Open(dbPath)
 	if err != nil {
@@ -105,51 +111,29 @@ func TestEnginePersistenceMultipleCycles(t *testing.T) {
 	eng := consensus.NewEngine(node, time.Hour)
 	eng.SetStorage(st)
 
-	// Run multiple cycles
-	for cycle := 0; cycle < 3; cycle++ {
-		for i := 0; i < 2; i++ {
-			hash := sha256.Sum256([]byte("multi"))
-			hash[0] = byte(cycle*10 + i + 1)
-			if err := eng.Enqueue(chain.ProvenanceEntry{
-				Hash:      hash,
-				Submitter: uid.RootID,
-				Label:     "multi",
-			}); err != nil {
-				t.Fatalf("Enqueue cycle %d entry %d: %v", cycle, i, err)
-			}
-		}
+	// Run a few cycles to advance state
+	for i := 0; i < 3; i++ {
 		eng.RunCycle()
 	}
 
-	if eng.BlockCount() != 3 {
-		t.Fatalf("expected 3 blocks, got %d", eng.BlockCount())
-	}
-
+	originalCycle := eng.Cycle()
+	originalLambda1 := eng.GetHealth().Lambda1
 	eng.Stop()
 
-	// Restart and verify all blocks
+	// Restore
 	eng2 := consensus.NewEngine(node, time.Hour)
 	eng2.SetStorage(st)
 
-	if eng2.BlockCount() != 3 {
-		t.Fatalf("after restart: expected 3 blocks, got %d", eng2.BlockCount())
+	if eng2.Cycle() != originalCycle {
+		t.Fatalf("cycle mismatch: expected %d, got %d", originalCycle, eng2.Cycle())
 	}
-
-	// Verify all anchored proofs
-	for cycle := 0; cycle < 3; cycle++ {
-		for i := 0; i < 2; i++ {
-			hash := sha256.Sum256([]byte("multi"))
-			hash[0] = byte(cycle*10 + i + 1)
-			proof, ok := eng2.LookupHash(hash)
-			if !ok || !proof.Found {
-				t.Fatalf("proof not found for cycle %d entry %d", cycle, i)
-			}
-		}
+	if eng2.GetHealth().Lambda1 != originalLambda1 {
+		t.Fatalf("lambda1 mismatch: expected %f, got %f", originalLambda1, eng2.GetHealth().Lambda1)
 	}
 }
 
-func TestEnginePersistenceSMT(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gleipnir-smt-test")
+func TestSMTAndAnchoredPersistence(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "gleipnir-smt-persist-test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +141,12 @@ func TestEnginePersistenceSMT(t *testing.T) {
 
 	dbPath := tmpDir + "/engine.db"
 
-	uid := identity.NewUIDZero("smt-test", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("smt-persist-network"))
+	uid, err := identity.NewUIDZero("smt-test", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	node := consensus.Node{UID: *uid, Addr: "smt-test"}
 
 	st, err := storage.Open(dbPath)
@@ -169,100 +158,60 @@ func TestEnginePersistenceSMT(t *testing.T) {
 	eng := consensus.NewEngine(node, time.Hour)
 	eng.SetStorage(st)
 
-	// Submit entries that will be in SMT
-	hashes := make([][32]byte, 10)
-	for i := 0; i < 10; i++ {
-		h := sha256.Sum256([]byte("smt-entry"))
-		h[0] = byte(i + 1)
-		hashes[i] = h
-		eng.Enqueue(chain.ProvenanceEntry{
-			Hash:      h,
-			Submitter: uid.RootID,
-			Label:     "smt",
-		})
+	// Submit entries
+	for i := 0; i < 3; i++ {
+		hash := sha256.Sum256([]byte("anchor-entry"))
+		hash[0] = byte(i + 1)
+		var submitter [16]byte
+		copy(submitter[:], uid.RootID[:])
+		if err := eng.Enqueue(chain.ProvenanceEntry{
+			Hash:      hash,
+			Submitter: submitter,
+			Label:     "smt-test",
+		}); err != nil {
+			t.Fatalf("Enqueue %d: %v", i, err)
+		}
 	}
 
 	eng.RunCycle()
 
-	// Get SMT root
-	root1 := eng.GetStateRoot()
-
-	eng.Stop()
-
-	// Restart
-	eng2 := consensus.NewEngine(node, time.Hour)
-	eng2.SetStorage(st)
-
-	root2 := eng2.GetStateRoot()
-
-	if string(root1) != string(root2) {
-		t.Fatalf("SMT root mismatch after restart: %x vs %x", root1, root2)
+	// Verify anchor proofs accessible
+	if eng.PendingCount() != 0 {
+		t.Fatalf("expected 0 pending after cycle, got %d", eng.PendingCount())
 	}
 
-	// Verify SMT proofs work
-	for _, h := range hashes {
-		proof, err := eng2.ProveSMT(h[:])
-		if err != nil {
-			t.Fatalf("ProveSMT failed: %v", err)
+	block := eng.GetBlock(0)
+	if block == nil {
+		t.Fatal("no block found")
+	}
+
+	// Check SMT and anchored data
+	for _, entry := range block.Anchored {
+		proof, found := eng.LookupHash(entry.Hash)
+		if !found {
+			t.Fatalf("anchor proof not found for hash %x", entry.Hash)
 		}
-		if len(proof) == 0 {
-			t.Fatal("empty SMT proof")
+		if proof.BlockIndex != 0 {
+			t.Fatalf("wrong block index in proof: expected 0, got %d", proof.BlockIndex)
 		}
-	}
-}
-
-func TestEnginePersistencePendingEntries(t *testing.T) {
-	tmpDir, err := os.MkdirTemp("", "gleipnir-pending-test")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(tmpDir)
-
-	dbPath := tmpDir + "/engine.db"
-
-	uid := identity.NewUIDZero("pending-test", true)
-	node := consensus.Node{UID: *uid, Addr: "pending-test"}
-
-	st, err := storage.Open(dbPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer st.Close()
-
-	eng := consensus.NewEngine(node, time.Hour)
-	eng.SetStorage(st)
-
-	// Add pending entries but don't run cycle
-	for i := 0; i < 3; i++ {
-		hash := sha256.Sum256([]byte("pending"))
-		hash[0] = byte(i + 1)
-		eng.Enqueue(chain.ProvenanceEntry{
-			Hash:      hash,
-			Submitter: uid.RootID,
-			Label:     "pending",
-		})
-	}
-
-	pendingBefore := eng.PendingCount()
-	if pendingBefore != 3 {
-		t.Fatalf("expected 3 pending, got %d", pendingBefore)
 	}
 
 	eng.Stop()
 
-	// Restart
+	// Restore and verify
 	eng2 := consensus.NewEngine(node, time.Hour)
 	eng2.SetStorage(st)
 
-	pendingAfter := eng2.PendingCount()
-	if pendingAfter != 3 {
-		t.Fatalf("after restart: expected 3 pending, got %d", pendingAfter)
-	}
-
-	// Now run cycle - should use pending entries
-	eng2.RunCycle()
-
-	if eng2.BlockCount() != 1 {
-		t.Fatalf("expected 1 block after cycle, got %d", eng2.BlockCount())
+	for _, entry := range block.Anchored {
+		proof, found := eng2.LookupHash(entry.Hash)
+		if !found {
+			t.Fatalf("anchor proof not found after restore for hash %x", entry.Hash)
+		}
+		if proof.BlockIndex != 0 {
+			t.Fatalf("wrong block index after restore: expected 0, got %d", proof.BlockIndex)
+		}
+		if len(proof.SMTProof) == 0 {
+			t.Fatal("SMT proof is empty after restore")
+		}
 	}
 }

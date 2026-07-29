@@ -10,13 +10,22 @@ import (
 	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
+var networkID [32]byte
+
+func init() {
+	copy(networkID[:], []byte("bench-network-id"))
+}
+
 func BenchmarkSelectProposer(b *testing.B) {
 	sizes := []int{3, 10, 50}
 	for _, n := range sizes {
 		b.Run(fmt.Sprintf("peers=%d", n), func(b *testing.B) {
 			peers := make([]Peer, n)
 			for i := 0; i < n; i++ {
-				uid := identity.NewUIDZero(fmt.Sprintf("peer-%d", i), true)
+				uid, err := identity.NewUIDZero(fmt.Sprintf("peer-%d", i), networkID, true)
+				if err != nil {
+					b.Fatal(err)
+				}
 				peers[i] = Peer{UID: *uid, Addr: fmt.Sprintf("addr-%d", i), Alive: true}
 			}
 			state := []byte("test-state-root")
@@ -32,7 +41,10 @@ func BenchmarkSelectProposer(b *testing.B) {
 func BenchmarkSelectTriad(b *testing.B) {
 	peers := make([]Peer, 10)
 	for i := 0; i < 10; i++ {
-		uid := identity.NewUIDZero(fmt.Sprintf("peer-%d", i), true)
+		uid, err := identity.NewUIDZero(fmt.Sprintf("peer-%d", i), networkID, true)
+		if err != nil {
+			b.Fatal(err)
+		}
 		peers[i] = Peer{UID: *uid, Addr: fmt.Sprintf("addr-%d", i), Alive: true}
 	}
 	b.ResetTimer()

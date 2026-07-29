@@ -9,7 +9,7 @@ import (
 	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
-type Triad [3][]byte
+type Triad [3][16]byte
 
 var ErrVRFSelectionFailed = errors.New("VRF proposer selection: no valid proofs")
 
