@@ -292,9 +292,11 @@ func TestNetworkFragmentation(t *testing.T) {
 	eng.cfg.MinLambda1 = 0 // Allow single-node mode
 
 	// Enqueue an entry to propose
+	var submitter [16]byte
+	copy(submitter[:], uid.RootID[:])
 	eng.Enqueue(chain.ProvenanceEntry{
 		Hash:      [32]byte{1},
-		Submitter: uid.RootID,
+		Submitter: submitter,
 		Label:     "test",
 	})
 

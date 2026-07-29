@@ -43,7 +43,9 @@ func TestLivelockRegressionFragmentationRecovery(t *testing.T) {
 
 	// Run 10 cycles — none should produce a block
 	for i := 0; i < 10; i++ {
-		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(i + 1)}, Submitter: uid.RootID})
+		var submitter [16]byte
+		copy(submitter[:], uid.RootID[:])
+		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(i + 1)}, Submitter: submitter})
 		eng.RunCycle()
 	}
 
@@ -64,7 +66,9 @@ func TestLivelockRegressionFragmentationRecovery(t *testing.T) {
 
 	// Run more cycles — blocks should resume
 	for i := 0; i < 5; i++ {
-		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(100 + i)}, Submitter: uid.RootID})
+		var submitter [16]byte
+		copy(submitter[:], uid.RootID[:])
+		eng.Enqueue(chain.ProvenanceEntry{Hash: [32]byte{byte(100 + i)}, Submitter: submitter})
 		eng.RunCycle()
 	}
 

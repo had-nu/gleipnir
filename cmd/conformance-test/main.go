@@ -220,12 +220,12 @@ func randomHash() []byte {
 	return h
 }
 
-func signPayload(uid *identity.UIDZeroSoulbound, hash, submitter []byte, ts int64, label string) []byte {
+func signPayload(uid *identity.UIDZeroSoulbound, hash []byte, submitter [16]byte, ts int64, label string) []byte {
 	tsLE := make([]byte, 8)
 	binary.LittleEndian.PutUint64(tsLE, uint64(ts))
 	signed := make([]byte, 0, len(hash)+len(submitter)+len(tsLE)+len(label))
 	signed = append(signed, hash...)
-	signed = append(signed, submitter...)
+	signed = append(signed, submitter[:]...)
 	signed = append(signed, tsLE...)
 	signed = append(signed, label...)
 	return identity.SignDilithium(uid.SecretKey, signed)
@@ -240,7 +240,7 @@ func tc01SubmitValid(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 
 	start := time.Now()
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 	})
 	latency := time.Since(start)
 
@@ -263,7 +263,7 @@ func tc02NoSignature(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 
 	start := time.Now()
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label,
 	})
 	latency := time.Since(start)
 
@@ -290,7 +290,7 @@ func tc03BadSignature(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *i
 
 	start := time.Now()
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label,
 		Signature: bytes.Repeat([]byte{0x42}, 2700),
 	})
 	latency := time.Since(start)
@@ -348,7 +348,7 @@ func tc05ZeroHash(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *ident
 
 	start := time.Now()
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: zeroHash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+		Hash: zeroHash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 	})
 	latency := time.Since(start)
 
@@ -376,7 +376,7 @@ func tc06FullLifecycle(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *
 
 	start := time.Now()
 	submitResp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 	})
 	if err != nil {
 		fail("TC06", "G4", "Submit→Wait→Verify", time.Since(start), fmt.Sprintf("submit gRPC error: %v", err))
@@ -525,7 +525,7 @@ func tc11ApproverReference(ctx context.Context, raw pb.ProvenanceAnchorClient, u
 
 	start := time.Now()
 	submitResp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
-		Hash: hash, Submitter: uid.RootID, Timestamp: ts, Label: label, Signature: sig,
+		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label, Signature: sig,
 		Approver: approver, Reference: reference,
 	})
 	if err != nil {

@@ -154,7 +154,7 @@ func (s *CubeRoom) handleDerive(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, DeriveResponse{
 		UIDID:          child.UID.ID(),
 		DerivationPath: child.DerivationPath,
-		PublicKey:      hex.EncodeToString(child.UID.PublicKey),
+		PublicKey:      hex.EncodeToString(child.UID.PublicKey[:]),
 	})
 }
 
@@ -294,10 +294,17 @@ func (s *CubeRoom) deriveChild(name, role string) (*ChildUID, error) {
 	nameSeed := deriveSeed(roleSeed, nameLabel, nameIndex)
 
 	childSeedHex := hex.EncodeToString(nameSeed)
-	childUID := identity.NewUIDZero(childSeedHex, true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("gleipnir-frontend-network"))
+	childUID, err := identity.NewUIDZero(childSeedHex, networkID, true)
+	if err != nil {
+		return nil, err
+	}
 
 	hash := blake3.Sum256(append(nameSeed, []byte("rootid")...))
-	childUID.RootID = hash[:16]
+	var rootID [16]byte
+	copy(rootID[:], hash[:16])
+	childUID.RootID = rootID
 
 	path := []DerivationStep{
 		{Label: roleLabel, Index: roleIndex},

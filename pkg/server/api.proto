@@ -2,7 +2,7 @@
 // Gleipnir is the reference implementation.
 syntax = "proto3";
 package provenance;
-option go_package = "github.com/had-nu/gleipnir/pkg/server/pb";
+option go_package = "github.com/had-nu/gleipnir/v2/pkg/server/pb";
 
 service ProvenanceAnchor {
   rpc SubmitHash(SubmitRequest) returns (SubmitResponse);
@@ -25,11 +25,12 @@ message SubmitRequest {
 }
 
 message SubmitResponse {
-  bool   accepted      = 1;
-  string status        = 2;
-  uint64 block_index   = 3;
-  int64  block_time    = 4;
-  string error_code    = 5;
+  bytes  tx_id       = 1;
+  bool   accepted    = 2;
+  string status      = 3;
+  uint64 block_index = 4;
+  int64  block_time  = 5;
+  string error_code  = 6;
 }
 
 message WaitRequest {
@@ -89,6 +90,7 @@ message Block {
   double              lambda1     = 7;
   int64               timestamp   = 8;
   repeated bytes      sigs        = 9;
+  bytes               block_hash  = 10;
 }
 
 message ProvenanceEntry {

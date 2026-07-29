@@ -3,7 +3,6 @@ package server
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/hex"
 	"time"
 
@@ -19,7 +18,7 @@ type Server struct {
 	nodeID    string
 	identity  *identity.UIDZeroSoulbound
 	engine    *consensus.Engine
-	keys      map[string]*identity.UIDZeroSoulbound
+	registry  *identity.Registry
 	startTime time.Time
 }
 
@@ -33,14 +32,17 @@ func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOpti
 	eng := consensus.NewEngine(node, 3*time.Second)
 	eng.Start()
 
+	// Initialize identity registry with the node's identity
+	registry := identity.NewRegistry()
+	_ = registry.Register(uid.ID(), uid.PublicKey[:])
+
 	s := &Server{
 		nodeID:    nodeID,
 		identity:  uid,
 		engine:    eng,
-		keys:      make(map[string]*identity.UIDZeroSoulbound),
+		registry:  registry,
 		startTime: time.Now(),
 	}
-	s.keys[uid.ID()] = uid
 	for _, opt := range opts {
 		opt(s)
 	}
@@ -49,7 +51,7 @@ func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOpti
 
 func WithKey(uid *identity.UIDZeroSoulbound) ServerOption {
 	return func(s *Server) {
-		s.keys[uid.ID()] = uid
+		_ = s.registry.Register(uid.ID(), uid.PublicKey[:])
 	}
 }
 
@@ -65,6 +67,7 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 	if err := s.authenticateSubmit(req); err != nil {
 		code, _ := validation.FromError(err)
 		return &pb.SubmitResponse{
+			TxId:       req.Hash[:],
 			Accepted:  false,
 			Status:    err.Error(),
 			ErrorCode: code,
@@ -104,6 +107,7 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 	if err := s.engine.Enqueue(entry); err != nil {
 		code, _ := validation.FromError(err)
 		return &pb.SubmitResponse{
+			TxId:      req.Hash[:],
 			Accepted:  false,
 			Status:    err.Error(),
 			ErrorCode: code,
@@ -111,21 +115,25 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 	}
 
 	return &pb.SubmitResponse{
-		Accepted: true,
-		Status:   "pending",
+		TxId:      req.Hash[:],
+		Accepted:  true,
+		Status:    "pending",
+		BlockIndex: 0,
+		BlockTime:  0,
 	}, nil
 }
 
 func (s *Server) authenticateSubmit(req *pb.SubmitRequest) error {
-	submitterID := hex.EncodeToString(req.Submitter)
-	uid, ok := s.keys[submitterID]
-	if !ok {
+	// 1. Lookup submitter's public key from registry
+	pubKey, err := s.registry.Lookup(hex.EncodeToString(req.Submitter))
+	if err != nil {
 		return validation.WrapValidationError(
 			validation.ErrCodeSubmitterMismatch,
 			"unknown submitter",
 			validation.ErrUnknownSubmitter,
 		)
 	}
+
 	if len(req.Signature) == 0 {
 		return validation.WrapValidationError(
 			validation.ErrCodeInvalidSignature,
@@ -133,14 +141,9 @@ func (s *Server) authenticateSubmit(req *pb.SubmitRequest) error {
 			validation.ErrInvalidSignature,
 		)
 	}
-	ts := make([]byte, 8)
-	binary.LittleEndian.PutUint64(ts, uint64(req.Timestamp))
-	signed := make([]byte, 0, len(req.Hash)+len(req.Submitter)+len(ts)+len(req.Label))
-	signed = append(signed, req.Hash...)
-	signed = append(signed, req.Submitter...)
-	signed = append(signed, ts...)
-	signed = append(signed, req.Label...)
-	if !identity.VerifyDilithium(uid.PublicKey[:], signed, req.Signature) {
+
+	// Verify Dilithium3 signature
+	if !identity.VerifySignature(pubKey, req.Hash, req.Submitter, req.Timestamp, req.Label, req.Signature) {
 		return validation.WrapValidationError(
 			validation.ErrCodeInvalidSignature,
 			"signature does not match submitter",
@@ -257,5 +260,6 @@ func (s *Server) GetBlock(ctx context.Context, req *pb.BlockRequest) (*pb.Block,
 		Lambda1:      b.Lambda1,
 		Timestamp:    b.Timestamp,
 		Sigs:         pbSigs,
+		BlockHash:    b.ComputeHash(),
 	}, nil
 }
