@@ -8,8 +8,8 @@ import (
 
 // SubmitterLimiter tracks pending entries per submitter with sliding window expiration.
 type SubmitterLimiter struct {
-	mu          sync.Mutex
-	windows     map[string]*timeWindow
+	mu           sync.Mutex
+	windows      map[string]*timeWindow
 	maxPerWindow int
 	windowDur    time.Duration
 }
@@ -27,8 +27,8 @@ func NewSubmitterLimiter(maxPerWindow int, windowDur time.Duration) *SubmitterLi
 	}
 }
 
-func (sl *SubmitterLimiter) Allow(submitter []byte) bool {
-	key := string(submitter)
+func (sl *SubmitterLimiter) Allow(submitter [16]byte) bool {
+	key := string(submitter[:])
 	sl.mu.Lock()
 	w, ok := sl.windows[key]
 	if !ok {

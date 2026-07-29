@@ -8,7 +8,7 @@ func TestValidateEntry(t *testing.T) {
 	tests := []struct {
 		name        string
 		hash        [32]byte
-		submitter   []byte
+		submitter   [16]byte
 		label       string
 		limits      APILimits
 		wantErrCode string
@@ -16,7 +16,7 @@ func TestValidateEntry(t *testing.T) {
 		{
 			name:        "valid entry",
 			hash:        [32]byte{1},
-			submitter:   []byte("submitter"),
+			submitter:   [16]byte{},
 			label:       "test",
 			limits:      DefaultAPILimits(),
 			wantErrCode: "",
@@ -24,7 +24,7 @@ func TestValidateEntry(t *testing.T) {
 		{
 			name:        "zero hash rejected",
 			hash:        [32]byte{},
-			submitter:   []byte("submitter"),
+			submitter:   [16]byte{},
 			label:       "test",
 			limits:      DefaultAPILimits(),
 			wantErrCode: ErrCodeInvalidHash,
@@ -32,7 +32,7 @@ func TestValidateEntry(t *testing.T) {
 		{
 			name:        "empty submitter rejected",
 			hash:        [32]byte{1},
-			submitter:   []byte{},
+			submitter:   [16]byte{},
 			label:       "test",
 			limits:      DefaultAPILimits(),
 			wantErrCode: ErrCodeInvalidSubmitter,
@@ -40,7 +40,7 @@ func TestValidateEntry(t *testing.T) {
 		{
 			name:        "label too long rejected",
 			hash:        [32]byte{1},
-			submitter:   []byte("submitter"),
+			submitter:   func() [16]byte { var s [16]byte; copy(s[:], []byte("submitter")); return s }(),
 			label:       string(make([]byte, 300)),
 			limits:      DefaultAPILimits(),
 			wantErrCode: ErrCodeLabelTooLong,
@@ -49,6 +49,10 @@ func TestValidateEntry(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// Set a non-empty submitter for valid tests
+			if tt.name == "valid entry" {
+				copy(tt.submitter[:], []byte("submitter"))
+			}
 			err := ValidateEntry(tt.hash, tt.submitter, tt.label, tt.limits)
 			if tt.wantErrCode == "" {
 				if err != nil {

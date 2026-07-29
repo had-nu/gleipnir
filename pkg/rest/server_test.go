@@ -17,7 +17,13 @@ import (
 
 func newTestUID(t *testing.T) *identity.UIDZeroSoulbound {
 	t.Helper()
-	return identity.NewUIDZero("test-root-identity-for-testing", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid, err := identity.NewUIDZero("test-root-identity-for-testing", networkID, true)
+	if err != nil {
+		t.Fatalf("NewUIDZero error: %v", err)
+	}
+	return uid
 }
 
 func newTestEngine(t *testing.T, uid *identity.UIDZeroSoulbound) *consensus.Engine {
@@ -365,7 +371,12 @@ func TestUnknownRootID(t *testing.T) {
 	srv := httptest.NewServer(s.Handler())
 	defer srv.Close()
 
-	unknownUID := identity.NewUIDZero("unknown-uid-for-testing", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	unknownUID, err := identity.NewUIDZero("unknown-uid-for-testing", networkID, true)
+	if err != nil {
+		t.Fatalf("NewUIDZero error: %v", err)
+	}
 	ts := ts()
 	body := `{"hash":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff","submitter":"test","label":"test"}`
 	sig := signRequest(unknownUID, body, "POST", "/v1/submit", ts)

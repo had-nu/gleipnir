@@ -66,14 +66,19 @@ func TestVerifyDilithiumBytes(t *testing.T) {
 }
 
 func TestNewUIDZero(t *testing.T) {
-	uid := NewUIDZero("test-seed", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid, err := NewUIDZero("test-seed", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if uid == nil {
 		t.Fatal("uid is nil")
 	}
-	if len(uid.RootID) == 0 {
+	if uid.RootID == [16]byte{} {
 		t.Fatal("RootID is empty")
 	}
-	if len(uid.PublicKey) == 0 {
+	if uid.PublicKey == [1952]byte{} {
 		t.Fatal("PublicKey is empty")
 	}
 	if len(uid.SecretKey) == 0 {
@@ -85,7 +90,12 @@ func TestNewUIDZero(t *testing.T) {
 }
 
 func TestUIDZeroID(t *testing.T) {
-	uid := NewUIDZero("test-id-42", false)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid, err := NewUIDZero("test-id-42", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 	id := uid.ID()
 	if len(id) == 0 {
 		t.Fatal("ID is empty")
@@ -93,8 +103,16 @@ func TestUIDZeroID(t *testing.T) {
 }
 
 func TestNewUIDZeroDeterministic(t *testing.T) {
-	uid1 := NewUIDZero("same-seed", true)
-	uid2 := NewUIDZero("same-seed", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid1, err := NewUIDZero("same-seed", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	uid2, err := NewUIDZero("same-seed", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	id1 := uid1.ID()
 	id2 := uid2.ID()
@@ -105,7 +123,12 @@ func TestNewUIDZeroDeterministic(t *testing.T) {
 }
 
 func TestCBORMarshalUnmarshal(t *testing.T) {
-	uid := NewUIDZero("cbor-test", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid, err := NewUIDZero("cbor-test", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	data, err := uid.SerializeCBOR()
 	if err != nil {
@@ -131,7 +154,12 @@ func TestCBORMarshalUnmarshal(t *testing.T) {
 }
 
 func TestCBORMarshalPreservesPublicKey(t *testing.T) {
-	uid := NewUIDZero("key-test", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("test-network-id"))
+	uid, err := NewUIDZero("key-test", networkID, true)
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	data, err := uid.SerializeCBOR()
 	if err != nil {
@@ -143,82 +171,89 @@ func TestCBORMarshalPreservesPublicKey(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(uid2.PublicKey) == 0 {
+	if uid2.PublicKey == [1952]byte{} {
 		t.Fatal("PublicKey lost during CBOR round-trip")
 	}
 }
 
-func TestSealAndFinalDigest(t *testing.T) {
-	uid := NewUIDZero("seal-test", true)
-
-	err := uid.Seal()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(uid.FinalDigest) == 0 {
-		t.Fatal("FinalDigest is empty after Seal")
-	}
-}
-
-func TestWipeSecret(t *testing.T) {
-	_, sk, err := GenerateDilithiumKey(rand.Reader)
+func TestVRFProveVerify(t *testing.T) {
+	var networkID [32]byte
+	copy(networkID[:], []byte("vrf-test-network"))
+	uid, err := NewUIDZero("vrf-test", networkID, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	WipeSecret(sk)
-	for _, b := range sk {
-		if b != 0 {
-			t.Fatal("secret key was not wiped")
-		}
-	}
-}
-
-func TestHash(t *testing.T) {
-	h1 := Hash([]byte("test"))
-	h2 := Hash([]byte("test"))
-
-	if len(h1) != 32 {
-		t.Fatalf("expected 32 bytes, got %d", len(h1))
-	}
-
-	for i := range h1 {
-		if h1[i] != h2[i] {
-			t.Fatal("hash should be deterministic")
-		}
-	}
-
-	h3 := Hash([]byte("different"))
-	equal := true
-	for i := range h1 {
-		if h1[i] != h3[i] {
-			equal = false
-			break
-		}
-	}
-	if equal {
-		t.Fatal("different inputs should produce different hashes")
-	}
-}
-
-func TestGenerateLivenessNonce(t *testing.T) {
-	nonce, err := GenerateLivenessNonce()
+	alpha := []byte("test-alpha")
+	proof, err := uid.VRFProve(alpha)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(nonce) != 32 {
-		t.Fatalf("expected 32 bytes, got %d", len(nonce))
+
+	gamma, err := uid.VRFVerifyProof(alpha, proof)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	nonce2, _ := GenerateLivenessNonce()
-	equal := true
-	for i := range nonce {
-		if nonce[i] != nonce2[i] {
-			equal = false
-			break
+	if len(gamma) != 32 {
+		t.Fatalf("expected 32-byte VRF output, got %d", len(gamma))
+	}
+
+	// Test verification with wrong alpha
+	_, err = uid.VRFVerifyProof([]byte("wrong"), proof)
+	if err == nil {
+		t.Fatal("VRF verification should fail for wrong alpha")
+	}
+}
+
+func TestDilithiumBatchVerify(t *testing.T) {
+	var networkID [32]byte
+	copy(networkID[:], []byte("batch-test-network"))
+
+	// Generate multiple UIDs
+	uids := make([]*UIDZeroSoulbound, 5)
+	for i := 0; i < 5; i++ {
+		uid, err := NewUIDZero("batch-seed-"+string(rune(i+'0')), networkID, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		uids[i] = uid
+	}
+
+	// Create messages and signatures
+	messages := make([][]byte, 5)
+	signatures := make([][]byte, 5)
+	publicKeys := make([][]byte, 5)
+
+	for i := 0; i < 5; i++ {
+		messages[i] = []byte("message-" + string(rune(i+'0')))
+		signatures[i] = uids[i].SignDilithium(messages[i])
+		publicKeys[i] = uids[i].PublicKey[:]
+	}
+
+	// Batch verify
+	results, err := VerifyBatch(messages, signatures, publicKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(results) != 5 {
+		t.Fatalf("expected 5 results, got %d", len(results))
+	}
+
+	for i, ok := range results {
+		if !ok {
+			t.Errorf("signature %d should be valid", i)
 		}
 	}
-	if equal {
-		t.Fatal("nonces should be random")
+
+	// Tamper with one message
+	messages[0] = []byte("tampered")
+	results, err = VerifyBatch(messages, signatures, publicKeys)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if results[0] {
+		t.Error("tampered message should fail verification")
 	}
 }

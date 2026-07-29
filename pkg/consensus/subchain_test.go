@@ -12,7 +12,12 @@ import (
 )
 
 func setupEngine() *Engine {
-	uid := identity.NewUIDZero("subchain-test", true)
+	var networkID [32]byte
+	copy(networkID[:], []byte("subchain-test-network"))
+	uid, err := identity.NewUIDZero("subchain-test", networkID, true)
+	if err != nil {
+		panic(err)
+	}
 	node := Node{UID: *uid, Addr: "self"}
 	eng := NewEngine(node, time.Hour)
 	eng.Start()

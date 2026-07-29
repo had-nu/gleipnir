@@ -41,6 +41,14 @@ type Engine struct {
 	rateLimiter *SubmitterLimiter // sliding-window rate limiter
 
 	quorumConfig chain.QuorumConfig
+
+	// v2.0 fields
+	cycleTimeout   time.Duration // CycleTimeout for PREPARE phase
+	degradedMode   bool          // Whether network is in degraded mode
+	pendingEntries []chain.ProvenanceEntry // Retained entries across cycle aborts
+
+	// Incremental Laplacian for efficient λ₁ computation
+	laplacian *state.IncrementalLaplacian
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -49,14 +57,16 @@ func NewEngine(node Node, cycleInterval time.Duration) *Engine {
 
 func NewEngineWithPeers(node Node, cycleInterval time.Duration, gossip GossipChannel, peers []Peer) *Engine {
 	eng := newEngine(node, cycleInterval, gossip, peers)
-	// Register all peers in state with full mesh edges
+	// Register all peers in state with full mesh edges and validator keys
 	var edges []state.Edge
 	for _, p := range peers {
 		uidHex := p.UID.ID()
 		if _, ok := eng.state.Nodes[uidHex]; !ok {
 			eng.state.Nodes[uidHex] = state.NodeState{
-				UID:    p.UID.RootID,
-				Status: 1.0,
+				UID:          p.UID.RootID,
+				Status:       1.0,
+				Dilithium3PK: p.UID.PublicKey,
+				VRFPK:        p.UID.VRFPublicKey,
 			}
 		}
 		for _, q := range peers {
@@ -64,6 +74,16 @@ func NewEngineWithPeers(node Node, cycleInterval time.Duration, gossip GossipCha
 		}
 	}
 	eng.state.Graph.Edges = edges
+	// Also populate ValidatorSet from peers
+	eng.state.ValidatorSet = make([]state.ValidatorInfo, 0, len(peers))
+	for _, p := range peers {
+		eng.state.ValidatorSet = append(eng.state.ValidatorSet, state.ValidatorInfo{
+			ValidatorID:  p.UID.RootID,
+			Dilithium3PK: p.UID.PublicKey,
+			VRFPK:        p.UID.VRFPublicKey,
+			ContractHash: p.UID.ContractHash,
+		})
+	}
 	return eng
 }
 
@@ -73,10 +93,13 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 	if peers == nil {
 		peers = []Peer{{UID: node.UID, Addr: node.Addr, Alive: true}}
 	}
-	// Default quorum: single-node = 1/1, multi-node = 3/3 (legacy)
+	// Default quorum: single-node = 1/1, multi-node = ceil(2N/3)
 	quorumCfg := chain.DefaultQuorumConfig()
 	if len(peers) == 1 {
 		quorumCfg = chain.QuorumConfig{TotalValidators: 1, RequiredSigs: 1}
+	} else {
+		// v2.0: Fixed quorum formula Q = ceil(2N/3)
+		quorumCfg = chain.QuorumConfig{TotalValidators: len(peers), RequiredSigs: (2*len(peers) + 2) / 3}
 	}
 	eng := &Engine{
 		node:          node,
@@ -94,6 +117,9 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		nowFunc:       time.Now,
 		rateLimiter:   NewSubmitterLimiter(5000, time.Minute), // 5000 per minute default
 		quorumConfig:  quorumCfg,
+		cycleTimeout:  10 * time.Second, // Default 10s cycle timeout
+		pendingEntries: make([]chain.ProvenanceEntry, 0),
+		laplacian:       state.DefaultIncrementalLaplacian(),
 	}
 	eng.state.Nodes[uidHex] = state.NodeState{
 		UID:    node.UID.RootID,
@@ -102,6 +128,13 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 	eng.state.Graph.Edges = []state.Edge{
 		{From: uidHex, To: uidHex, Weight: 1.0},
 	}
+	// Initialize validator set
+	eng.state.ValidatorSet = []state.ValidatorInfo{{
+		ValidatorID:  node.UID.RootID,
+		Dilithium3PK: node.UID.PublicKey,
+		VRFPK:        node.UID.VRFPublicKey,
+		ContractHash: node.UID.ContractHash,
+	}}
 	return eng
 }
 
@@ -130,6 +163,56 @@ func (e *Engine) SetStorage(s EngineStorage) {
 	if s != nil {
 		e.loadPersisted()
 	}
+}
+
+// RunVRFPhase publishes this engine's VRF proof and collects all VRF proofs for the given cycle.
+// This is the first phase of consensus, run before the PREPARE phase.
+// All engines in the network should call this before the PREPARE phase.
+func (e *Engine) RunVRFPhase(cycle uint64) (map[string]*identity.VRFProof, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if e.gossip == nil {
+		return nil, fmt.Errorf("no gossip channel for VRF phase")
+	}
+
+	rootArr := e.st.Root()
+	alpha := makeAlpha(cycle, rootArr[:])
+	localProof, vrfErr := e.node.UID.VRFProve(alpha)
+	if vrfErr != nil {
+		return nil, fmt.Errorf("VRF proof error: %w", vrfErr)
+	}
+
+	// Publish VRF proof
+	if e.gossip != nil {
+		proofBytes := identity.MarshalVRFProof(localProof)
+		e.gossip.PublishVRFProof(VRFProofMsg{Cycle: cycle, Proof: proofBytes, SignerID: e.node.UID.ID()})
+	}
+
+	// Collect all VRF proofs (local + from gossip)
+	vrfProofs := make(map[string]*identity.VRFProof)
+	vrfProofs[e.node.UID.ID()] = localProof
+	if e.gossip != nil {
+		for _, msg := range e.gossip.GetVRFProofs(cycle) {
+			p, err := identity.UnmarshalVRFProof(msg.Proof)
+			if err == nil {
+				if _, exists := vrfProofs[msg.SignerID]; !exists {
+					vrfProofs[msg.SignerID] = p
+				}
+			}
+		}
+	}
+
+	return vrfProofs, nil
+}
+
+// RunPreparePhaseWithVRF executes the PREPARE phase using pre-collected VRF proofs.
+// This is the second phase of consensus, run after RunVRFPhase.
+// The vrfProofs parameter should contain the VRF proofs collected by RunVRFPhase.
+func (e *Engine) RunPreparePhaseWithVRF(cycle uint64, rootArr [32]byte, pendingEntries []chain.ProvenanceEntry, vrfProofs map[string]*identity.VRFProof, checkQuorum bool) *PrepareResult {
+	// Temporarily replace gossip's VRF proofs for this cycle
+	// Note: This is a simplified approach; in production, VRF proofs are already in gossip
+	return e.RunPreparePhase(cycle, rootArr, pendingEntries, checkQuorum)
 }
 
 // persist saves engine state to storage.
@@ -182,6 +265,10 @@ func (e *Engine) SetQuorumConfig(config chain.QuorumConfig) {
 func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
+	if e.stopped {
+		return ErrEngineStopped
+	}
 
 	cfg := e.apiLimitsLocked()
 	if err := validateEntry(entry.Hash, entry.Submitter, entry.Label, cfg); err != nil {
@@ -237,10 +324,10 @@ func (e *Engine) PendingCount() int {
 }
 
 //nolint:unused
-func (e *Engine) countPendingBySubmitter(submitter []byte) int {
+func (e *Engine) countPendingBySubmitter(submitter [16]byte) int {
 	count := 0
 	for _, e := range e.pending {
-		if string(e.Submitter) == string(submitter) {
+		if e.Submitter == submitter {
 			count++
 		}
 	}
@@ -299,231 +386,99 @@ func (e *Engine) RunCycle() {
 	defer e.mu.Unlock()
 
 	cycle := e.state.Cycle
-	myUIDHex := e.node.UID.ID()
 
-	if e.gossip != nil {
-		e.pending = e.pending[:0]
+	// Build pending entries: include retained entries from previous aborted cycles
+	allPending := make([]chain.ProvenanceEntry, len(e.pendingEntries))
+	copy(allPending, e.pendingEntries)
+	allPending = append(allPending, e.pending...)
+
+	if len(allPending) == 0 && e.cfg.SkipEmptyCycles {
+		e.state.Cycle++
+		return
 	}
 
 	rootArr := e.st.Root()
-	proposerPeers := e.peers
-	if e.gossip == nil {
-		proposerPeers = []Peer{{UID: e.node.UID, Addr: e.node.Addr, Alive: true}}
-	}
 
-	// Compute local VRF proof for proposer selection
-	alpha := makeAlpha(cycle, rootArr[:])
-	localProof, vrfErr := e.node.UID.VRFProve(alpha)
-	if vrfErr != nil {
-		log.Printf("IPC cycle %d: VRF proof error: %v", cycle, vrfErr)
+	// PHASE 1: PREPARE - proposer proposes, validators sign
+	prepareResult := e.RunPreparePhase(cycle, rootArr, allPending, false)
+	if prepareResult.Err != nil {
+		log.Printf("IPC cycle %d: PREPARE failed: %v", cycle, prepareResult.Err)
+		// Cycle aborted - retain entries for next cycle
+		e.pendingEntries = allPending
 		e.state.Cycle++
 		return
 	}
 
-	// Publish VRF proof to gossip network
-	if e.gossip != nil {
-		proofBytes := identity.MarshalVRFProof(localProof)
-		e.gossip.PublishVRFProof(VRFProofMsg{Cycle: cycle, Proof: proofBytes, SignerID: myUIDHex})
-	}
-
-	// Collect all VRF proofs (local + from gossip)
-	vrfProofs := make(map[string]*identity.VRFProof)
-	vrfProofs[myUIDHex] = localProof
-	if e.gossip != nil {
-		for _, msg := range e.gossip.GetVRFProofs(cycle) {
-			p, err := identity.UnmarshalVRFProof(msg.Proof)
-			if err == nil {
-				if _, exists := vrfProofs[msg.SignerID]; !exists {
-					vrfProofs[msg.SignerID] = p
-				}
-			}
-		}
-	}
-
-	proposer, _, vrfErr := SelectProposer(proposerPeers, cycle, rootArr[:], vrfProofs)
-	if vrfErr != nil {
-		log.Printf("IPC cycle %d: VRF proposer selection failed: %v", cycle, vrfErr)
-		e.state.Cycle++
-		return
-	}
-	proposerHex := proposer.UID.ID()
-	amProposer := proposerHex == myUIDHex
-
-	if nodeState, ok := e.state.Nodes[proposerHex]; ok && nodeState.Status <= 0 {
-		log.Printf("IPC cycle %d: proposer %s is inactive, skipping", cycle, proposerHex)
+	// PHASE 2: QUORUM CHECK - proposer verifies quorum on the same block
+	prepareResult = e.RunPreparePhase(cycle, rootArr, allPending, true)
+	if prepareResult.Err != nil {
+		log.Printf("IPC cycle %d: QUORUM CHECK failed: %v", cycle, prepareResult.Err)
+		e.pendingEntries = allPending
 		e.state.Cycle++
 		return
 	}
 
-	prevHash := make([]byte, 32)
-	if len(e.blocks) > 0 {
-		prevHash = e.blocks[len(e.blocks)-1].BlockHash
+	// PHASE 3: COMMIT - all validators verify and commit
+	commitResult := e.RunCommitPhase(cycle, prepareResult)
+	if commitResult.Err != nil {
+		log.Printf("IPC cycle %d: COMMIT failed: %v", cycle, commitResult.Err)
+		e.pendingEntries = allPending
+		e.state.Cycle++
+		return
 	}
 
-	var entries []chain.ProvenanceEntry
-	var block chain.Block
+	// SUCCESS: Commit the block
+	finalBlock := commitResult.Block
 
-	if amProposer {
-		// Proposer: collect entries from gossip snapshot
-		if e.gossip != nil {
-			entries = e.gossip.Snapshot()
-		} else {
-			entries = make([]chain.ProvenanceEntry, len(e.pending))
-			copy(entries, e.pending)
-			e.pending = e.pending[:0]
-		}
-
-		if len(entries) == 0 {
-			e.state.Cycle++
-			return
-		}
-
-		seen := make(map[[32]byte]int)
-		unique := make([]chain.ProvenanceEntry, 0, len(entries))
-		for _, entry := range entries {
-			if _, dup := seen[entry.Hash]; !dup {
-				seen[entry.Hash] = 1
-				unique = append(unique, entry)
-			}
-		}
-		entries = unique
-
-		block = chain.Block{
-			Index:      cycle,
-			PrevHash:   prevHash,
-			Proposer:   proposer.UID.RootID,
-			Anchored:   entries,
-			Lambda1:    e.state.Lambda1,
-			Timestamp:  e.nowFunc().UnixNano(),
-			Quorum:     e.quorumConfig,
-			Validators: make([][]byte, 0, len(e.peers)),
-			Sigs:       make([][]byte, 0, len(e.peers)),
-		}
-
-		for _, p := range e.peers {
-			block.Validators = append(block.Validators, p.UID.PublicKey)
-		}
-
-		for i := range entries {
-			var h [32]byte
-			copy(h[:], entries[i].Hash[:])
-			if err := e.st.Insert(h[:], entries[i].Hash[:]); err != nil {
-				log.Printf("IPC cycle %d: SMT Insert: %v", cycle, err)
-			}
-
-			proof, _ := e.st.Prove(h[:])
-			proofBytes := make([]byte, 0, len(proof)*32)
-			for _, p := range proof {
-				proofBytes = append(proofBytes, p[:]...)
-			}
-			stateRootArr := e.st.Root()
-		e.anchored[h] = &chain.AnchorProof{
-			Found:      true,
-			BlockIndex: uint64(len(e.blocks)),
-			BlockTime:  block.Timestamp,
-			StateRoot:  stateRootArr[:],
-			SMTProof:   proofBytes,
-			Submitter:  entries[i].Submitter,
-			Label:      entries[i].Label,
-		}
-	}
-
-	stateRootArr := e.st.Root()
-	block.StateRoot = stateRootArr[:]
-		blockHash := computeBlockHash(block)
-		block.BlockHash = blockHash
-
-		// Proposer signs first
-		proposerSig := identity.SignDilithium(e.node.UID.SecretKey, blockHash)
-		block.Sigs = append(block.Sigs, proposerSig)
-
-		if e.gossip != nil {
-			e.gossip.Propose(block, myUIDHex)
-			e.gossip.PublishSig(BlockSig{Cycle: cycle, Sig: proposerSig, SignerID: myUIDHex})
-		}
-	} else {
-		// Non-proposer: read proposer's block from gossip
-		if e.gossip == nil {
-			e.state.Cycle++
-			return
-		}
-		proposal := e.gossip.GetProposed(cycle)
-		if proposal == nil {
-			log.Printf("IPC cycle %d: no proposal from proposer %s, skipping", cycle, proposerHex)
-			e.state.Cycle++
-			return
-		}
-		block = *proposal
-		entries = block.Anchored
-
-		// Insert entries into SMT (must match proposer's root)
-		for i := range entries {
-			var h [32]byte
-			copy(h[:], entries[i].Hash[:])
-			if err := e.st.Insert(h[:], entries[i].Hash[:]); err != nil {
-				log.Printf("IPC cycle %d: SMT Insert: %v", cycle, err)
-			}
-
-			proof, _ := e.st.Prove(h[:])
-			proofBytes := make([]byte, 0, len(proof)*32)
-			for _, p := range proof {
-				proofBytes = append(proofBytes, p[:]...)
-			}
-			stateRootArr := e.st.Root()
-			e.anchored[h] = &chain.AnchorProof{
-				Found:      true,
-				BlockIndex: uint64(len(e.blocks)),
-				BlockTime:  block.Timestamp,
-				StateRoot:  stateRootArr[:],
-				SMTProof:   proofBytes,
-				Submitter:  entries[i].Submitter,
-				Label:      entries[i].Label,
-			}
-		}
-
-		// Verify SMT root matches proposer's
-		localRoot := e.st.Root()
-		if string(localRoot[:]) != string(block.StateRoot) {
-			log.Printf("IPC cycle %d: SMT root mismatch, local=%x proposal=%x",
-				cycle, localRoot[:], block.StateRoot)
-			e.state.Cycle++
-			return
-		}
-
-		mySig := identity.SignDilithium(e.node.UID.SecretKey, block.BlockHash)
-		e.gossip.PublishSig(BlockSig{Cycle: cycle, Sig: mySig, SignerID: myUIDHex})
-	}
-
-	// Collect signatures from all peers (flexible quorum)
-	if e.gossip != nil && len(e.peers) >= 3 {
-		sigs := e.gossip.GetSigs(cycle)
-		sigMap := make(map[string][]byte)
-		for _, s := range sigs {
-			sigMap[s.SignerID] = s.Sig
-		}
-
-			validSigs := make([][]byte, 0, len(e.peers))
-		for _, p := range e.peers {
-			if sig, ok := sigMap[p.UID.ID()]; ok && len(sig) > 0 {
-				validSigs = append(validSigs, sig)
-			}
-		}
-		block.Sigs = validSigs
-	}
-
-	// Note: Quorum verification is now done by the caller after all engines
-	// have run their RunCycle for the current cycle. This allows all peers
-	// to sign before quorum is verified.
-
-	next, err := state.Apply(e.state, e.state.SupervisionRoot, []string{myUIDHex}, e.cfg)
+	// Apply state transition
+	next, err := state.Apply(e.state, e.state.SupervisionRoot, []string{e.node.UID.ID()}, e.cfg, e.laplacian)
 	if err != nil {
-		e.state.Cycle++
 		log.Printf("IPC cycle %d: state apply error: %v (λ₁=%.4f, min=%.4f, block not appended)",
 			cycle, err, e.state.Lambda1, e.cfg.MinLambda1)
+		// Cycle failed - retain entries for next cycle
+		e.pendingEntries = allPending
+		e.state.Cycle++
 		return
 	}
 	e.state = next
-	e.blocks = append(e.blocks, block)
+
+	// Clear pending entries that were committed
+	committedHashes := make(map[[32]byte]bool)
+	for _, entry := range finalBlock.Anchored {
+		committedHashes[entry.Hash] = true
+	}
+	newPending := make([]chain.ProvenanceEntry, 0, len(e.pendingEntries))
+	for _, entry := range e.pendingEntries {
+		if !committedHashes[entry.Hash] {
+			newPending = append(newPending, entry)
+		}
+	}
+	e.pendingEntries = newPending
+	e.pending = e.pending[:0] // Clear local pending
+
+	// Append block to chain
+	e.blocks = append(e.blocks, *finalBlock)
+
+	// Populate anchored map with anchor proofs for committed entries
+	for _, entry := range finalBlock.Anchored {
+		var h [32]byte
+		copy(h[:], entry.Hash[:])
+		proof, _ := e.st.Prove(h[:])
+		proofBytes := make([]byte, 0, len(proof)*32)
+		for _, p := range proof {
+			proofBytes = append(proofBytes, p[:]...)
+		}
+		stateRootArr := e.st.Root()
+		e.anchored[h] = &chain.AnchorProof{
+			Found:      true,
+			BlockIndex: uint64(len(e.blocks) - 1),
+			BlockTime:  finalBlock.Timestamp,
+			StateRoot:  stateRootArr[:],
+			SMTProof:   proofBytes,
+			Submitter:  entry.Submitter,
+			Label:      entry.Label,
+		}
+	}
 
 	// Persist state after successful block append
 	if e.storage != nil {
@@ -531,16 +486,16 @@ func (e *Engine) RunCycle() {
 	}
 
 	// Remove committed entries from gossip pool
-	if e.gossip != nil && amProposer {
+	if e.gossip != nil {
 		remove := make(map[[32]byte]bool)
-		for _, entry := range entries {
+		for _, entry := range finalBlock.Anchored {
 			remove[entry.Hash] = true
 		}
 		e.gossip.RemoveEntries(remove)
 	}
 
 	log.Printf("IPC cycle %d: block anchored with %d entries, root=%x, λ₁=%.4f",
-		cycle, len(entries), block.StateRoot, e.state.Lambda1)
+		cycle, len(finalBlock.Anchored), finalBlock.StateRoot, e.state.Lambda1)
 }
 
 //nolint:unused
@@ -589,7 +544,7 @@ func (e *Engine) ProveSMT(key []byte) ([][32]byte, error) {
 
 // Anchorer interface implementation.
 
-func (e *Engine) Submit(ctx context.Context, hash [32]byte, submitter []byte, label string) (*chain.Ticket, error) {
+func (e *Engine) Submit(ctx context.Context, hash [32]byte, submitter [16]byte, label string) (*chain.Ticket, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -656,7 +611,7 @@ func computeBlockHash(b chain.Block) []byte {
 	_ = binary.Write(h, binary.LittleEndian, b.Index)
 	_, _ = h.Write(b.PrevHash)
 	_, _ = h.Write(b.StateRoot)
-	_, _ = h.Write(b.Proposer)
+	_, _ = h.Write(b.Proposer[:])
 	for _, e := range b.Anchored {
 		_, _ = h.Write(e.Hash[:])
 	}

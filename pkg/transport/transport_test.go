@@ -12,11 +12,11 @@ import (
 
 func TestSecureConnHandshakeAndExchange(t *testing.T) {
 	// Generate Kyber keys for both sides
-	pkA, skA, err := identity.KyberGenerateKey()
+	pkA, skA, err := identity.GenerateKyberKeyPair()
 	if err != nil {
 		t.Fatal(err)
 	}
-	pkB, skB, err := identity.KyberGenerateKey()
+	pkB, skB, err := identity.GenerateKyberKeyPair()
 	if err != nil {
 		t.Fatal(err)
 	}

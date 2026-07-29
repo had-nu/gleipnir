@@ -210,6 +210,14 @@ func (sk *VRFPrivateKey) PublicKey() *VRFPublicKey {
 	return &VRFPublicKey{pk: pk}
 }
 
+// GenerateVRFKeyFromSeed generates a deterministic VRF keypair from a 32-byte seed.
+func GenerateVRFKeyFromSeed(seed [32]byte) (*VRFPrivateKey, *VRFPublicKey, error) {
+	sk := new(ristretto.Scalar)
+	sk.SetBytes(&seed)
+	pk := new(ristretto.Point).ScalarMultBase(sk)
+	return &VRFPrivateKey{sk: sk}, &VRFPublicKey{pk: pk}, nil
+}
+
 // Equal checks if two public keys are equal.
 func (pk *VRFPublicKey) Equal(other *VRFPublicKey) bool {
 	return pk.pk.Equals(other.pk)

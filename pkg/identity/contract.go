@@ -1,5 +1,5 @@
-// IPC identity — UID0 derived from a company contract.
-// Gleipnir reference implementation.
+// IPC identity — UID0 v2.0 derived from a company contract.
+// Gleipnir reference implementation of 3CP v2.0.
 package identity
 
 import (
@@ -9,8 +9,8 @@ import (
 // ContractHash computes the canonical hash of a founding/company contract
 // document. The resulting digest binds every derived UID0 to the same legal
 // root — the "fabric of accountability" across internal services.
-func ContractHash(doc []byte) []byte {
-	return Hash(doc)
+func ContractHash(doc []byte) [32]byte {
+	return Blake3Hash(doc)
 }
 
 // DRBG seeded from a fixed seed. Implements io.Reader so it can drive
@@ -23,7 +23,7 @@ type seedReader struct {
 func (r *seedReader) Read(p []byte) (int, error) {
 	for i := range p {
 		if r.pos >= len(r.buf) {
-			r.buf = Hash(r.buf)
+			r.buf = Hash(r.buf)[:]
 			r.pos = 0
 		}
 		p[i] = r.buf[r.pos]
@@ -32,40 +32,28 @@ func (r *seedReader) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// NewUIDZeroFromContract derives a UID0 deterministically from a company
+// NewUIDZeroFromContract derives a UID0 v2.0 deterministically from a company
 // contract hash. The same (contractHash, nodeSalt) pair always produces the
 // same identity — including the Dilithium3 keypair — so a contract member can
 // be proven cryptographically without out-of-band key exchange.
 //
 // nodeSalt distinguishes roles/nodes within the same contract family
 // (e.g. "wardex", "anti-ransomware", "founder").
-func NewUIDZeroFromContract(contractHash []byte, nodeSalt string, simulated bool) *UIDZeroSoulbound {
-	material := append(append([]byte{}, contractHash...), []byte(nodeSalt)...)
-	seed := Hash(material) // 32 bytes
+func NewUIDZeroFromContract(contractHash [32]byte, nodeSalt string, simulated bool) (*UIDZeroSoulbound, error) {
+	// Use contractHash + nodeSalt as entropy source for NewUIDZero
+	material := append(contractHash[:], []byte(nodeSalt)...)
+	entropySource := hex.EncodeToString(material)
 
-	rng := &seedReader{buf: seed}
-	pk, sk, err := GenerateDilithiumKey(rng)
-	if err != nil {
-		pk = make([]byte, 32)
-		sk = make([]byte, 32)
-	}
+	// Create a NetworkID from contractHash for HKDF derivation
+	// In practice, NetworkID comes from genesis block, but for contract-derived
+	// identities we use the contract hash as the network identifier
+	var networkID [32]byte
+	copy(networkID[:], contractHash[:])
 
-	uid := &UIDZeroSoulbound{
-		RootID:        seed[:16],
-		FEntropy:      seed[16:],
-		GenesisHash:   []byte(hex.EncodeToString(seed)),
-		CycleIndex:    0,
-		GeneratedAt:   generateTimestamp(),
-		Simulated:     simulated,
-		PublicKey:     pk,
-		SecretKey:     sk,
-		ContractHash:  contractHash,
-	}
-	return uid
+	return NewUIDZero(entropySource, networkID, simulated, contractHash)
 }
 
-// ContractOf returns the contract hash this UID0 was derived from, or nil if
-// it was not contract-derived.
-func (u *UIDZeroSoulbound) ContractOf() []byte {
+// ContractOf returns the contract hash this UID0 was derived from.
+func (u *UIDZeroSoulbound) ContractOf() [32]byte {
 	return u.ContractHash
 }

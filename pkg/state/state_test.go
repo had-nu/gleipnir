@@ -9,11 +9,13 @@ import (
 )
 
 func TestStateSerialization(t *testing.T) {
+	var uid [16]byte
+	copy(uid[:], []byte{1, 2, 3})
 	s := NetworkState{
 		Cycle: 1,
 		Nodes: map[string]NodeState{
 			"010203": {
-				UID:    []byte{1, 2, 3},
+				UID:    uid,
 				Status: 1.0,
 			},
 		},
@@ -28,18 +30,23 @@ func TestStateSerialization(t *testing.T) {
 	s.SupervisionRoot = root1
 
 	root2 := ComputeSupervisionRoot(s)
-	if !bytes.Equal(root1, root2) {
+	if !bytes.Equal(root1[:], root2[:]) {
 		t.Errorf("StateRoot calculation is not deterministic")
 	}
 }
 
 func TestApplyWithHeartbeat(t *testing.T) {
+	var uidAA, uidBB, uidCC [16]byte
+	copy(uidAA[:], []byte{0xaa})
+	copy(uidBB[:], []byte{0xbb})
+	copy(uidCC[:], []byte{0xcc})
+
 	s0 := NetworkState{
 		Cycle: 0,
 		Nodes: map[string]NodeState{
-			"aa": {UID: []byte{0xaa}, Status: 1.0, JoinCycle: 0},
-			"bb": {UID: []byte{0xbb}, Status: 1.0, JoinCycle: 0},
-			"cc": {UID: []byte{0xcc}, Status: 1.0, JoinCycle: 0},
+			"aa": {UID: uidAA, Status: 1.0, JoinCycle: 0},
+			"bb": {UID: uidBB, Status: 1.0, JoinCycle: 0},
+			"cc": {UID: uidCC, Status: 1.0, JoinCycle: 0},
 		},
 		Graph: ReputationGraph{
 			Edges: []Edge{
@@ -51,8 +58,9 @@ func TestApplyWithHeartbeat(t *testing.T) {
 	}
 	s0.SupervisionRoot = ComputeSupervisionRoot(s0)
 
+	laplacian := DefaultIncrementalLaplacian()
 	heartbeats := []string{"aa", "bb"}
-	s1, err := Apply(s0, s0.SupervisionRoot, heartbeats, DefaultConfig)
+	s1, err := Apply(s0, s0.SupervisionRoot, heartbeats, DefaultConfig, laplacian)
 	if err != nil {
 		t.Fatalf("Apply failed: %v", err)
 	}
@@ -79,10 +87,12 @@ func TestApplyWithHeartbeat(t *testing.T) {
 }
 
 func TestApplyChainBroken(t *testing.T) {
+	var uidAA [16]byte
+	copy(uidAA[:], []byte{0xaa})
 	s0 := NetworkState{
 		Cycle: 1,
 		Nodes: map[string]NodeState{
-			"aa": {UID: []byte{0xaa}, Status: 1.0, JoinCycle: 0},
+			"aa": {UID: uidAA, Status: 1.0, JoinCycle: 0},
 		},
 		Graph: ReputationGraph{
 			Edges: []Edge{{From: "aa", To: "aa", Weight: 1.0}},
@@ -90,19 +100,27 @@ func TestApplyChainBroken(t *testing.T) {
 	}
 	s0.SupervisionRoot = ComputeSupervisionRoot(s0)
 
-	_, err := Apply(s0, []byte("wrong-prev-root"), nil, DefaultConfig)
+	var prevRoot [32]byte
+	copy(prevRoot[:], []byte("wrong-prev-root"))
+	laplacian := DefaultIncrementalLaplacian()
+	_, err := Apply(s0, prevRoot, nil, DefaultConfig, laplacian)
 	if err != ErrChainBroken {
 		t.Fatalf("expected ErrChainBroken for mismatched prevRoot, got %v", err)
 	}
 }
 
 func TestApplyChainBrokenNilPrevRoot(t *testing.T) {
+	var uidAA, uidBB, uidCC [16]byte
+	copy(uidAA[:], []byte{0xaa})
+	copy(uidBB[:], []byte{0xbb})
+	copy(uidCC[:], []byte{0xcc})
+
 	s0 := NetworkState{
 		Cycle: 0,
 		Nodes: map[string]NodeState{
-			"aa": {UID: []byte{0xaa}, Status: 1.0, JoinCycle: 0},
-			"bb": {UID: []byte{0xbb}, Status: 1.0, JoinCycle: 0},
-			"cc": {UID: []byte{0xcc}, Status: 1.0, JoinCycle: 0},
+			"aa": {UID: uidAA, Status: 1.0, JoinCycle: 0},
+			"bb": {UID: uidBB, Status: 1.0, JoinCycle: 0},
+			"cc": {UID: uidCC, Status: 1.0, JoinCycle: 0},
 		},
 		Graph: ReputationGraph{
 			Edges: []Edge{
@@ -114,7 +132,8 @@ func TestApplyChainBrokenNilPrevRoot(t *testing.T) {
 	}
 	s0.SupervisionRoot = ComputeSupervisionRoot(s0)
 
-	s1, err := Apply(s0, nil, []string{"aa"}, DefaultConfig)
+	laplacian := DefaultIncrementalLaplacian()
+	s1, err := Apply(s0, [32]byte{}, []string{"aa"}, DefaultConfig, laplacian)
 	if err != nil {
 		t.Fatalf("Apply with nil prevRoot on cycle 0 should pass: %v", err)
 	}
@@ -124,12 +143,17 @@ func TestApplyChainBrokenNilPrevRoot(t *testing.T) {
 }
 
 func TestApplyNetworkFragmented(t *testing.T) {
+	var uidA1, uidB1, uidC1 [16]byte
+	copy(uidA1[:], []byte{0xa1})
+	copy(uidB1[:], []byte{0xb1})
+	copy(uidC1[:], []byte{0xc1})
+
 	s0 := NetworkState{
 		Cycle: 0,
 		Nodes: map[string]NodeState{
-			"a1": {UID: []byte{0xa1}, Status: 1.0, JoinCycle: 0},
-			"b1": {UID: []byte{0xb1}, Status: 1.0, JoinCycle: 0},
-			"x1": {UID: []byte{0xc1}, Status: 1.0, JoinCycle: 0},
+			"a1": {UID: uidA1, Status: 1.0, JoinCycle: 0},
+			"b1": {UID: uidB1, Status: 1.0, JoinCycle: 0},
+			"x1": {UID: uidC1, Status: 1.0, JoinCycle: 0},
 		},
 		Graph: ReputationGraph{
 			Edges: []Edge{
@@ -139,7 +163,8 @@ func TestApplyNetworkFragmented(t *testing.T) {
 	}
 	s0.SupervisionRoot = ComputeSupervisionRoot(s0) // disconnected: a1-b1, x1 isolated → λ₁ = 0
 
-	_, err := Apply(s0, s0.SupervisionRoot, []string{"a1", "b1", "x1"}, DefaultConfig)
+	laplacian := DefaultIncrementalLaplacian()
+	_, err := Apply(s0, s0.SupervisionRoot, []string{"a1", "b1", "x1"}, DefaultConfig, laplacian)
 	if err != ErrNetworkFragmented {
 		t.Fatalf("expected ErrNetworkFragmented for disconnected graph, got %v", err)
 	}
@@ -152,11 +177,15 @@ func TestCBORCanonicalEncoding(t *testing.T) {
 	em, _ := cbor.CanonicalEncOptions().EncMode()
 
 	// Build two states with same data but different insertion order
+	var uidZulu, uidAlfa [16]byte
+	copy(uidZulu[:], []byte{0x99})
+	copy(uidAlfa[:], []byte{0x01})
+
 	s1 := NetworkState{
 		Cycle: 10,
 		Nodes: map[string]NodeState{
-			"zulu": {UID: []byte{0x99}, Status: 0.5},
-			"alfa": {UID: []byte{0x01}, Status: 1.0},
+			"zulu": {UID: uidZulu, Status: 0.5},
+			"alfa": {UID: uidAlfa, Status: 1.0},
 		},
 		Graph: ReputationGraph{
 			Edges: []Edge{
@@ -168,8 +197,8 @@ func TestCBORCanonicalEncoding(t *testing.T) {
 	s2 := NetworkState{
 		Cycle: 10,
 		Nodes: map[string]NodeState{
-			"alfa": {UID: []byte{0x01}, Status: 1.0},
-			"zulu": {UID: []byte{0x99}, Status: 0.5},
+			"alfa": {UID: uidAlfa, Status: 1.0},
+			"zulu": {UID: uidZulu, Status: 0.5},
 		},
 		Graph: ReputationGraph{
 			Edges: []Edge{
