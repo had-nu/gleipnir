@@ -16,7 +16,7 @@ require (
 	golang.org/x/crypto v0.54.0
 	gonum.org/v1/gonum v0.17.0
 	google.golang.org/grpc v1.82.1
-	google.golang.org/protobuf v1.36.11
+	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
 	lukechampine.com/blake3 v1.4.1
 )
