@@ -213,8 +213,3 @@ func generateVRFKey(seed []byte) ([32]byte, []byte) {
 func EncodeUID(pubKey []byte) string {
 	return hex.EncodeToString(pubKey)
 }
-
-// generateTimestamp returns a fixed timestamp for simulated environments.
-func generateTimestamp() int64 {
-	return 1700000000
-}

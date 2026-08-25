@@ -3,13 +3,12 @@ package consensus
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
 	"log"
 	"sync"
 	"time"
 
+	"github.com/had-nu/gleipnir/pkg/anchor"
 	"github.com/had-nu/gleipnir/pkg/chain"
 	"github.com/had-nu/gleipnir/pkg/identity"
 	"github.com/had-nu/gleipnir/pkg/smt"
@@ -44,11 +43,20 @@ type Engine struct {
 
 	// v2.0 fields
 	cycleTimeout   time.Duration // CycleTimeout for PREPARE phase
-	degradedMode   bool          // Whether network is in degraded mode
+	degraded       *DegradedMode // Degraded mode handler
 	pendingEntries []chain.ProvenanceEntry // Retained entries across cycle aborts
 
 	// Incremental Laplacian for efficient λ₁ computation
 	laplacian *state.IncrementalLaplacian
+
+	// Adaptive cycle (EWMA RTT)
+	rttEWMA         time.Duration // Exponential moving average of RTT
+	rttSamples      int           // Number of RTT samples collected
+	lastCycleStart  time.Time     // Start time of current cycle for RTT measurement
+	cycleDuration   time.Duration // Current adaptive cycle duration
+
+	// Anchor Publisher (spec §11.1)
+	anchorPublisher *anchor.AnchorPublisher
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -94,7 +102,7 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		peers = []Peer{{UID: node.UID, Addr: node.Addr, Alive: true}}
 	}
 	// Default quorum: single-node = 1/1, multi-node = ceil(2N/3)
-	quorumCfg := chain.DefaultQuorumConfig()
+	var quorumCfg chain.QuorumConfig
 	if len(peers) == 1 {
 		quorumCfg = chain.QuorumConfig{TotalValidators: 1, RequiredSigs: 1}
 	} else {
@@ -120,6 +128,17 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		cycleTimeout:  10 * time.Second, // Default 10s cycle timeout
 		pendingEntries: make([]chain.ProvenanceEntry, 0),
 		laplacian:       state.DefaultIncrementalLaplacian(),
+		// Adaptive cycle: start with BaseInterval
+		cycleDuration: state.DefaultConfig.BaseInterval,
+		// Degraded mode handler
+		degraded: NewDegradedMode(state.DefaultConfig.MinValidators, state.DefaultConfig.GraceCycles),
+	}
+	// Initialize anchor publisher (filesystem + IPFS if configured)
+	anchorCfg := anchor.DefaultAnchorPublisherConfig()
+	if ap, err := anchor.NewAnchorPublisher(anchorCfg); err == nil {
+		eng.anchorPublisher = ap
+	} else {
+		log.Printf("Warning: failed to initialize anchor publisher: %v", err)
 	}
 	eng.state.Nodes[uidHex] = state.NodeState{
 		UID:    node.UID.RootID,
@@ -209,10 +228,10 @@ func (e *Engine) RunVRFPhase(cycle uint64) (map[string]*identity.VRFProof, error
 // RunPreparePhaseWithVRF executes the PREPARE phase using pre-collected VRF proofs.
 // This is the second phase of consensus, run after RunVRFPhase.
 // The vrfProofs parameter should contain the VRF proofs collected by RunVRFPhase.
-func (e *Engine) RunPreparePhaseWithVRF(cycle uint64, rootArr [32]byte, pendingEntries []chain.ProvenanceEntry, vrfProofs map[string]*identity.VRFProof, checkQuorum bool) *PrepareResult {
+func (e *Engine) RunPreparePhaseWithVRF(cycle uint64, rootArr [32]byte, pendingEntries []chain.ProvenanceEntry, vrfProofs map[string]*identity.VRFProof, checkQuorum bool, requiredQuorum int) *PrepareResult {
 	// Temporarily replace gossip's VRF proofs for this cycle
 	// Note: This is a simplified approach; in production, VRF proofs are already in gossip
-	return e.RunPreparePhase(cycle, rootArr, pendingEntries, checkQuorum)
+	return e.RunPreparePhase(cycle, rootArr, pendingEntries, checkQuorum, requiredQuorum)
 }
 
 // persist saves engine state to storage.
@@ -363,17 +382,66 @@ func (e *Engine) BlockCount() uint64 {
 }
 
 func (e *Engine) cycleLoop() {
-	ticker := time.NewTicker(e.cycleInterval)
+	// Adaptive cycle: use dynamic ticker that adjusts based on EWMA RTT
+	ticker := time.NewTicker(e.cycleDuration)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-e.ctx.Done():
 			return
-		case <-ticker.C:
+		case now := <-ticker.C:
+			e.lastCycleStart = now
 			e.RunCycle()
+
+			// Update cycle duration based on EWMA RTT
+			e.updateCycleDuration()
+
+			// Reset ticker with new duration
+			ticker.Stop()
+			ticker = time.NewTicker(e.cycleDuration)
 		}
 	}
+}
+
+// updateCycleDuration computes the next cycle duration using EWMA RTT per spec §10.1
+// CycleDuration = BaseInterval + EWMA(RTT) * SafetyFactor, capped at MaxCycleDuration
+func (e *Engine) updateCycleDuration() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	// Measure RTT for this cycle (time from cycle start to now)
+	rtt := time.Since(e.lastCycleStart)
+
+	// Update EWMA: EWMA_new = alpha * rtt + (1 - alpha) * EWMA_old
+	// Using alpha = 0.3 (standard for EWMA)
+	const alpha = 0.3
+	if e.rttSamples == 0 {
+		e.rttEWMA = rtt
+	} else {
+		e.rttEWMA = time.Duration(float64(rtt)*alpha + float64(e.rttEWMA)*(1-alpha))
+	}
+	e.rttSamples++
+
+	// Compute adaptive cycle duration per spec §10.1
+	// CycleDuration = BaseInterval + EWMA(RTT) * SafetyFactor
+	latencyEstimate := time.Duration(float64(e.rttEWMA) * e.cfg.SafetyFactor)
+	newDuration := e.cfg.BaseInterval + latencyEstimate
+
+	// Cap at MaxCycleDuration (protocol hard cap)
+	if newDuration > e.cfg.MaxCycleDuration {
+		newDuration = e.cfg.MaxCycleDuration
+	}
+
+	// Minimum cycle duration is BaseInterval
+	if newDuration < e.cfg.BaseInterval {
+		newDuration = e.cfg.BaseInterval
+	}
+
+	e.cycleDuration = newDuration
+
+	// Update cycleTimeout for PREPARE phase (use cycleDuration as timeout)
+	e.cycleTimeout = e.cycleDuration
 }
 
 func (e *Engine) RunCycle() {
@@ -397,10 +465,24 @@ func (e *Engine) RunCycle() {
 		return
 	}
 
+	// Determine active validators from ValidatorSet (not all nodes in state)
+	// ValidatorSet contains only the actual consensus validators
+	activeValidators := len(e.state.ValidatorSet)
+	if activeValidators == 0 {
+		// Fallback: count peers with validator keys
+		activeValidators = len(e.peers)
+	}
+
+	// Degraded mode: if N < MinValidators, Q = 1 (spec §5.5)
+	requiredQuorum := quorumRequired(activeValidators)
+	if e.degraded != nil && e.degraded.IsDegraded() {
+		requiredQuorum = 1
+	}
+
 	rootArr := e.st.Root()
 
 	// PHASE 1: PREPARE - proposer proposes, validators sign
-	prepareResult := e.RunPreparePhase(cycle, rootArr, allPending, false)
+	prepareResult := e.RunPreparePhase(cycle, rootArr, allPending, false, requiredQuorum)
 	if prepareResult.Err != nil {
 		log.Printf("IPC cycle %d: PREPARE failed: %v", cycle, prepareResult.Err)
 		// Cycle aborted - retain entries for next cycle
@@ -410,7 +492,7 @@ func (e *Engine) RunCycle() {
 	}
 
 	// PHASE 2: QUORUM CHECK - proposer verifies quorum on the same block
-	prepareResult = e.RunPreparePhase(cycle, rootArr, allPending, true)
+	prepareResult = e.RunPreparePhase(cycle, rootArr, allPending, true, requiredQuorum)
 	if prepareResult.Err != nil {
 		log.Printf("IPC cycle %d: QUORUM CHECK failed: %v", cycle, prepareResult.Err)
 		e.pendingEntries = allPending
@@ -430,7 +512,17 @@ func (e *Engine) RunCycle() {
 	// SUCCESS: Commit the block
 	finalBlock := commitResult.Block
 
-	// Apply state transition
+	// Check degraded mode transition (spec §5.5)
+	if e.degraded != nil {
+		_, _ = e.degraded.CheckDegradedTransition(activeValidators, prepareResult.QuorumReached)
+		// Apply degraded mode rules to block if in degraded mode
+		if err := e.degraded.ApplyDegradedBlock(finalBlock, e.peers, e.node.UID.ID()); err != nil {
+			log.Printf("IPC cycle %d: degraded mode error: %v", cycle, err)
+			e.pendingEntries = allPending
+			e.state.Cycle++
+			return
+		}
+	}
 	next, err := state.Apply(e.state, e.state.SupervisionRoot, []string{e.node.UID.ID()}, e.cfg, e.laplacian)
 	if err != nil {
 		log.Printf("IPC cycle %d: state apply error: %v (λ₁=%.4f, min=%.4f, block not appended)",
@@ -483,6 +575,19 @@ func (e *Engine) RunCycle() {
 	// Persist state after successful block append
 	if e.storage != nil {
 		e.persist()
+	}
+
+	// Publish block via Anchor Publisher (spec §11.1)
+	if e.anchorPublisher != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		anchors, err := e.anchorPublisher.Publish(ctx, finalBlock)
+		cancel()
+		if err != nil {
+			log.Printf("IPC cycle %d: anchor publisher error: %v", cycle, err)
+		} else {
+			finalBlock.ExternalAnchors = anchors
+			log.Printf("IPC cycle %d: block published to %d anchor(s): %v", cycle, len(anchors), anchors)
+		}
 	}
 
 	// Remove committed entries from gossip pool
@@ -604,17 +709,4 @@ func (e *Engine) verifyHash(hash [32]byte) (*chain.AnchorProof, bool) {
 		return proof, true
 	}
 	return nil, false
-}
-
-func computeBlockHash(b chain.Block) []byte {
-	h := sha256.New()
-	_ = binary.Write(h, binary.LittleEndian, b.Index)
-	_, _ = h.Write(b.PrevHash)
-	_, _ = h.Write(b.StateRoot)
-	_, _ = h.Write(b.Proposer[:])
-	for _, e := range b.Anchored {
-		_, _ = h.Write(e.Hash[:])
-	}
-	_ = binary.Write(h, binary.LittleEndian, b.Timestamp)
-	return h.Sum(nil)
 }

@@ -32,16 +32,6 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 	// Leader constructs B_final
 	if amLeader {
 		// Build PrepareSigsPayload: concatenate signatures in bitmap order
-		payload := make([]byte, 0)
-		for i, p := range e.peers {
-			if prepareResult.PrepareBitmap[i/8]&(1<<(i%8)) != 0 {
-				if sig, ok := prepareResult.PrepareSigs[p.UID.ID()]; ok {
-					payload = append(payload, sig...)
-				}
-			}
-		}
-
-		// Create final block with v2.0 fields
 		finalBlock := *block // Copy candidate block
 		finalBlock.PrepareSigsBitmap = prepareResult.PrepareBitmap
 		
@@ -58,7 +48,7 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 		finalBlock.ProtocolVersion = 2
 
 		// Leader signs the final block hash (COMMIT signature)
-		finalHash := computeBlockHash(finalBlock)
+		finalHash := chain.ComputeBlockHash(&finalBlock)
 		commitSig := identity.SignDilithium(e.node.UID.SecretKey, finalHash)
 		finalBlock.CommitSig = commitSig
 		finalBlock.BlockHash = finalHash
@@ -100,7 +90,7 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 	}
 
 	// Verify block hash matches
-	expectedHash := computeBlockHash(*finalProposal)
+	expectedHash := chain.ComputeBlockHash(finalProposal)
 	if string(expectedHash) != string(finalProposal.BlockHash) {
 		return &CommitResult{Err: fmt.Errorf("B_final block hash mismatch")}
 	}
@@ -118,7 +108,13 @@ func verifyPrepareQuorum(block *chain.Block, peers []Peer) bool {
 		return false
 	}
 
+	// Check for degraded mode label (spec §5.5)
 	requiredQuorum := quorumRequired(len(peers))
+	if block.Metadata != nil {
+		if val, ok := block.Metadata["3cp:degraded-block"]; ok && string(val) == "true" {
+			requiredQuorum = 1
+		}
+	}
 	verifiedCount := 0
 
 	for i, p := range peers {
