@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/bwesterb/go-ristretto v1.2.4
-	github.com/cloudflare/circl v1.6.4
+	github.com/cloudflare/circl v1.6.5
 	github.com/fxamacker/cbor/v2 v2.9.2
 	github.com/ipfs/go-cid v0.5.0
 	github.com/libp2p/go-libp2p v0.47.0
