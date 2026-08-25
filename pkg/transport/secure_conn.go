@@ -31,7 +31,7 @@ func kemHandshake(conn net.Conn, sk, pk []byte, peerID string, dialer bool) (*Se
 	var peerInfo PeerInfo
 
 	myPKMsg := append(padPeerID(peerID), pk...)
-	peerPKMsg := make([]byte, 32+identity.Kyber768PublicKeySize)
+	peerPKMsg := make([]byte, 32+identity.Kyber1024PublicKeySize)
 
 	if dialer {
 		if _, err := conn.Write(myPKMsg); err != nil {
@@ -64,7 +64,7 @@ func kemHandshake(conn net.Conn, sk, pk []byte, peerID string, dialer bool) (*Se
 			return nil, PeerInfo{}, err
 		}
 	} else {
-		ct := make([]byte, identity.Kyber768CiphertextSize)
+		ct := make([]byte, identity.Kyber1024CiphertextSize)
 		if _, err := io.ReadFull(conn, ct); err != nil {
 			return nil, PeerInfo{}, err
 		}

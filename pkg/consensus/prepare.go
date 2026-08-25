@@ -23,7 +23,8 @@ type PrepareResult struct {
 // The leader proposes a candidate block, validators verify and sign.
 // Returns PrepareResult with collected PREPARE signatures.
 // If checkQuorum is false, skips the final quorum check (useful for multi-step test scenarios).
-func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries []chain.ProvenanceEntry, checkQuorum bool) *PrepareResult {
+// requiredQuorum is the number of signatures needed (Q=1 in degraded mode, ceil(2N/3) otherwise).
+func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries []chain.ProvenanceEntry, checkQuorum bool, requiredQuorum int) *PrepareResult {
 	myUIDHex := e.node.UID.ID()
 
 	// Determine proposer peers
@@ -129,6 +130,13 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 				ProtocolVersion: 2,
 			}
 
+			// Degraded mode: add label to block metadata (spec §5.5)
+			if requiredQuorum == 1 {
+				block.Metadata = map[string][]byte{
+					"3cp:degraded-block": []byte("true"),
+				}
+			}
+
 			for _, p := range e.peers {
 				block.Validators = append(block.Validators, chain.ValidatorInfo{
 					ValidatorID:  p.UID.RootID,
@@ -151,7 +159,7 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 			block.StateRoot = stateRootArr[:]
 
 			// Compute block hash
-			blockHash := computeBlockHash(*block)
+			blockHash := chain.ComputeBlockHash(block)
 			block.BlockHash = blockHash
 
 			// Proposer signs the candidate block hash (PREPARE signature)
@@ -195,7 +203,7 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 			}
 
 			// Verify candidate block hash
-			expectedHash := computeBlockHash(*block)
+			expectedHash := chain.ComputeBlockHash(block)
 			if string(expectedHash) != string(block.BlockHash) {
 				return &PrepareResult{Err: fmt.Errorf("block hash mismatch")}
 			}
@@ -269,8 +277,7 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 
 	var quorumReached bool
 	if checkQuorum {
-		// Check quorum
-		requiredQuorum := quorumRequired(len(e.peers))
+		// Check quorum using requiredQuorum (Q=1 in degraded mode, ceil(2N/3) otherwise)
 		quorumReached = len(validPrepareSigs) >= requiredQuorum
 	}
 
