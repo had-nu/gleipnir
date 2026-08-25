@@ -6,8 +6,10 @@ require (
 	github.com/bwesterb/go-ristretto v1.2.4
 	github.com/cloudflare/circl v1.6.4
 	github.com/fxamacker/cbor/v2 v2.9.2
+	github.com/ipfs/go-cid v0.5.0
 	github.com/libp2p/go-libp2p v0.48.0
 	github.com/multiformats/go-multiaddr v0.16.1
+	github.com/multiformats/go-multihash v0.2.3
 	github.com/prometheus/client_golang v1.24.1
 	github.com/spf13/cobra v1.10.2
 	go.etcd.io/bbolt v1.5.0
@@ -33,7 +35,6 @@ require (
 	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/ipfs/go-cid v0.5.0 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
@@ -58,7 +59,6 @@ require (
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
 	github.com/multiformats/go-multicodec v0.9.1 // indirect
-	github.com/multiformats/go-multihash v0.2.3 // indirect
 	github.com/multiformats/go-multistream v0.6.1 // indirect
 	github.com/multiformats/go-varint v0.0.7 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
