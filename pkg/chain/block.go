@@ -5,7 +5,8 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/binary"
-	"math"
+
+	"lukechampine.com/blake3"
 )
 
 // Block represents a block in the 3CP chain v2.0.
@@ -101,7 +102,8 @@ func (q QuorumConfig) IsValid() bool {
 	return q.TotalValidators > 0 && q.RequiredSigs > 0 && q.RequiredSigs <= q.TotalValidators
 }
 
-// ComputeBlockHash computes the SHA-256 hash of a block per 3CP spec §3.2.
+// ComputeBlockHash computes the SHA-256 hash of a block per 3CP spec §4.4.
+// BlockHash = SHA-256(LE64(Index) || PrevHash || StateRoot || Proposer || HashOfAnchoredEntries || LE64(Timestamp) || QuorumConfigCanonical)
 func ComputeBlockHash(b *Block) []byte {
 	h := sha256.New()
 
@@ -119,66 +121,24 @@ func ComputeBlockHash(b *Block) []byte {
 	// Proposer (16 bytes)
 	h.Write(b.Proposer[:])
 
-	// Anchored entry hashes
-	for _, e := range b.Anchored {
-		h.Write(e.Hash[:])
-	}
-
-	// Lambda1 (LE64 float64 bits)
-	var lambdaBuf [8]byte
-	binary.LittleEndian.PutUint64(lambdaBuf[:], uint64(math.Float64bits(b.Lambda1)))
-	h.Write(lambdaBuf[:])
+	// HashOfAnchoredEntries: BLAKE3-256 of canonical CBOR of Anchored array (spec §4.4)
+	anchoredCBOR, _ := CanonicalCBOR(b.Anchored)
+	hashOfAnchored := blake3.Sum256(anchoredCBOR)
+	h.Write(hashOfAnchored[:])
 
 	// Timestamp (LE64)
 	var tsBuf [8]byte
 	binary.LittleEndian.PutUint64(tsBuf[:], uint64(b.Timestamp))
 	h.Write(tsBuf[:])
 
-	// ProtocolVersion (LE16)
-	var pvBuf [2]byte
-	binary.LittleEndian.PutUint16(pvBuf[:], b.ProtocolVersion)
-	h.Write(pvBuf[:])
-
-	// PrepareSigsBitmap
-	h.Write(b.PrepareSigsBitmap)
-
-	// PrepareSigs (concatenated)
-	for _, sig := range b.PrepareSigs {
-		h.Write(sig)
-	}
-
-	// CommitSig
-	h.Write(b.CommitSig)
-
-	// ExternalAnchors (length-prefixed strings)
-	for _, anchor := range b.ExternalAnchors {
-		var lenBuf [4]byte
-		binary.LittleEndian.PutUint32(lenBuf[:], uint32(len(anchor)))
-		h.Write(lenBuf[:])
-		h.Write([]byte(anchor))
-	}
-
-	// KeyRotationEpoch (LE64)
-	var krBuf [8]byte
-	binary.LittleEndian.PutUint64(krBuf[:], b.KeyRotationEpoch)
-	h.Write(krBuf[:])
-
-	// LegacyAnchor (genesis only)
-	h.Write(b.LegacyAnchor)
-
-	// Validators (canonical order)
-	for _, v := range b.Validators {
-		h.Write(v.ValidatorID[:])
-		h.Write(v.Dilithium3PK[:])
-		h.Write(v.VRFPK[:])
-		h.Write(v.ContractHash[:])
-	}
+	// QuorumConfigCanonical: canonical CBOR of QuorumConfig
+	quorumCBOR, _ := deterministicMode.Marshal(b.Quorum)
+	h.Write(quorumCBOR)
 
 	return h.Sum(nil)
 }
 
 // ComputeHash computes and returns the SHA-256 hash of the block.
-// This is the canonical block hash per 3CP spec §3.2.
 func (b *Block) ComputeHash() []byte {
 	return ComputeBlockHash(b)
 }
@@ -186,9 +146,4 @@ func (b *Block) ComputeHash() []byte {
 // VerifyHash checks if the stored BlockHash matches the computed hash.
 func (b *Block) VerifyHash() bool {
 	return bytes.Equal(b.BlockHash, b.ComputeHash())
-}
-
-// MarshalCBOR encodes a block to canonical CBOR.
-func MarshalCBOR(b *Block) ([]byte, error) {
-	return []byte("cbor-placeholder"), nil
 }
