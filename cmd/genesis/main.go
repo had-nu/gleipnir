@@ -401,7 +401,10 @@ func computeBlockHash(b *chain.Block) []byte {
 func hexDecode(s string) ([]byte, error) {
 	b := make([]byte, len(s)/2)
 	for i := 0; i < len(s); i += 2 {
-		fmt.Sscanf(s[i:i+2], "%02x", &b[i/2])
+		_, err := fmt.Sscanf(s[i:i+2], "%02x", &b[i/2])
+		if err != nil {
+			return nil, err
+		}
 	}
 	return b, nil
 }
@@ -421,6 +424,15 @@ type V1Validator struct {
 	UID0PubKey   string `json:"uid0_pubkey"`   // hex
 	VRFPubKey    string `json:"vrf_pubkey"`    // hex
 	ContractHash string `json:"contract_hash"` // hex, optional
+}
+
+// ToValidatorSpec converts a V1Validator to ValidatorSpec.
+func (v V1Validator) ToValidatorSpec() ValidatorSpec {
+	return ValidatorSpec{
+		UID0PubKey:   v.UID0PubKey,
+		VRFPubKey:    v.VRFPubKey,
+		ContractHash: v.ContractHash,
+	}
 }
 
 // V1Mandate represents a mandate in v1.0 format.
@@ -489,11 +501,7 @@ func importV1Snapshot(path string) (*GenesisSpec, error) {
 	// Convert validators
 	validators := make([]ValidatorSpec, len(snapshot.ValidatorSet))
 	for i, v := range snapshot.ValidatorSet {
-		validators[i] = ValidatorSpec{
-			UID0PubKey:   v.UID0PubKey,
-			VRFPubKey:    v.VRFPubKey,
-			ContractHash: v.ContractHash,
-		}
+		validators[i] = v.ToValidatorSpec()
 	}
 
 	// Convert mandates to genesis mandate
