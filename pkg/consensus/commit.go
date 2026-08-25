@@ -32,16 +32,6 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 	// Leader constructs B_final
 	if amLeader {
 		// Build PrepareSigsPayload: concatenate signatures in bitmap order
-		payload := make([]byte, 0)
-		for i, p := range e.peers {
-			if prepareResult.PrepareBitmap[i/8]&(1<<(i%8)) != 0 {
-				if sig, ok := prepareResult.PrepareSigs[p.UID.ID()]; ok {
-					payload = append(payload, sig...)
-				}
-			}
-		}
-
-		// Create final block with v2.0 fields
 		finalBlock := *block // Copy candidate block
 		finalBlock.PrepareSigsBitmap = prepareResult.PrepareBitmap
 		

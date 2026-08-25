@@ -102,7 +102,7 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		peers = []Peer{{UID: node.UID, Addr: node.Addr, Alive: true}}
 	}
 	// Default quorum: single-node = 1/1, multi-node = ceil(2N/3)
-	quorumCfg := chain.DefaultQuorumConfig()
+	var quorumCfg chain.QuorumConfig
 	if len(peers) == 1 {
 		quorumCfg = chain.QuorumConfig{TotalValidators: 1, RequiredSigs: 1}
 	} else {
