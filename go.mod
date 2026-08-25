@@ -1,6 +1,6 @@
 module github.com/had-nu/gleipnir
 
-go 1.25.7
+go 1.24
 
 require (
 	github.com/bwesterb/go-ristretto v1.2.4
