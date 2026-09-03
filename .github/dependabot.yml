@@ -9,6 +9,15 @@ updates:
     labels:
       - "dependencies"
       - "automated"
+    # Ignore major version updates for critical crypto dependencies
+    # These require manual review per security rules
+    ignore:
+      - dependency-name: "golang.org/x/crypto"
+        update-type: "version-update:semver-major"
+      - dependency-name: "github.com/cloudflare/circl"
+        update-type: "version-update:semver-major"
+      - dependency-name: "google.golang.org/grpc"
+        update-type: "version-update:semver-major"
 
   - package-ecosystem: "github-actions"
     directory: "/"
@@ -18,12 +27,16 @@ updates:
     labels:
       - "dependencies"
       - "automated"
+    # Ignore major version updates for CI actions
+    ignore:
+      - dependency-name: "actions/checkout"
+        update-type: "version-update:semver-major"
+      - dependency-name: "github/codeql-action"
+        update-type: "version-update:semver-major"
+      - dependency-name: "actions/setup-go"
+        update-type: "version-update:semver-major"
+      - dependency-name: "golangci/golangci-lint-action"
+        update-type: "version-update:semver-major"
 
-  - package-ecosystem: "docker"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "automated"
+# Docker ecosystem removed - Docker files are local only (not tracked in git)
+# If you need Docker base image updates, manage manually
