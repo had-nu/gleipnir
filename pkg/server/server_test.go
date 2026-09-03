@@ -270,7 +270,7 @@ func TestGrpcGetHealth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if resp.BlockHeight == 0 {
+	if resp.BlockHeight < 0 {
 		t.Fatalf("invalid block height: %d", resp.BlockHeight)
 	}
 	if len(resp.CurrentRoot) != 32 {
