@@ -74,7 +74,7 @@ func (d *DegradedMode) ApplyDegradedBlock(block *chain.Block, peers []Peer, myUI
 	// Find the first valid signature from PrepareSigs
 	var validSig []byte
 	for i, sig := range block.PrepareSigs {
-		if len(sig) == 0 {
+		if sig == nil || len(sig) == 0 {
 			continue
 		}
 		if i < len(peers) {

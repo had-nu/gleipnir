@@ -88,7 +88,6 @@ func TestSelectTriad(t *testing.T) {
 	peers := []Peer{testPeer("a"), testPeer("b"), testPeer("c")}
 
 	triad := SelectTriad(peers, 0, 3)
-	_ = triad // used in assertions below
 	if len(triad) != 3 {
 		t.Fatalf("triad should have 3 members, got %d", len(triad))
 	}
