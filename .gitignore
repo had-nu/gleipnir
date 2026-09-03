@@ -10,3 +10,7 @@ docs/internal/
 *.swo
 *~
 .DS_Store
+
+# Docker files (local only - not tracked)
+Dockerfile
+docker-compose*.yml
