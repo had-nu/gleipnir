@@ -14,12 +14,9 @@ Gleipnir is the **Go reference implementation** of the [3CP Protocol](https://gi
 |------|------|--------------|
 | *Your Name Here* | *Role* | *Describe your contribution* |
 
-## Special Thanks
+## Development
 
-| Name | Role | Contribution |
-|------|------|--------------|
-| AI Assistants | Code Generation & Review | Assisted in implementation, debugging, and optimization of critical components. |
-| Open-Source Community | Feedback & Testing | Early testers and reviewers who helped validate the implementation. |
+This project utilized **AI-assisted tools** for code generation, review, and optimization during development. While AI contributed to implementation details, the **protocol design, architecture, and innovation** (such as BFT consensus, SMT, and Dilithium3 integration) are entirely the work of the lead architect.
 
 ## Dependencies
 
@@ -30,6 +27,12 @@ This project relies on the following open-source libraries:
 - [Libsodium](https://doc.libsodium.org/) (ISC License)
 - [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) (Apache License 2.0 / MIT)
 - [Dilithium3](https://pq-crystals.org/) (Public Domain / MIT)
+
+## Special Thanks
+
+| Name | Role | Contribution |
+|------|------|--------------|
+| Open-Source Community | Feedback & Testing | Early testers and reviewers who helped validate the implementation. |
 
 ## How to Contribute
 
