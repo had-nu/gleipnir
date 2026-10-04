@@ -75,7 +75,7 @@ func TestGrpcSubmitHashRejectsUnauthenticated(t *testing.T) {
 		Submitter: submitter[:],
 		Timestamp: ts,
 		Label:     "test",
-		Signature: make([]byte, 2700), // invalid signature
+		Signature: make([]byte, identity.Dilithium3SignatureSize), // well-sized but invalid
 	})
 	if err != nil {
 		t.Fatal(err)

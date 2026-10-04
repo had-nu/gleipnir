@@ -291,7 +291,7 @@ func tc03BadSignature(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *i
 	start := time.Now()
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
 		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: label,
-		Signature: bytes.Repeat([]byte{0x42}, 2700),
+		Signature: bytes.Repeat([]byte{0x42}, identity.Dilithium3SignatureSize),
 	})
 	latency := time.Since(start)
 

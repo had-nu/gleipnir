@@ -147,14 +147,62 @@ grpcurl -plaintext -d '{"cycle": 25}' \
   localhost:9090 provenance.ProvenanceAnchor/GetActivePublicKey
 ```
 
-> **Note on signature size.** 3CP v2.0 §8.1 declares rotation signatures as 2700
-> bytes, but no Dilithium3 parameter set produces that: FIPS 204 specifies 2420
-> (ML-DSA-44), 3309 (ML-DSA-65) and 4627 (ML-DSA-87). The 1952-byte public key this
-> codebase uses comes from circl's round-3 `mode3`, whose signatures are 3293 bytes.
-> Sizes are therefore taken from `pkg/identity` rather than hard-coded, and the
-> rotation entry's signature fields are byte strings rather than fixed-size arrays —
-> a `[2700]byte` field would truncate every real signature and reject every rotation.
-> The same correction applies to the `2700` comment on `Block.CommitSig`.
+> **Note on signature size.** 3CP v2.0 §4.2 pins the primitive to ML-DSA-65
+> (Dilithium3) "conforme FIPS 204" — a 1952-byte verifying key, a 4032-byte expanded
+> signing key, NIST level 3 — but gave the signature size as 2700 bytes, which no
+> Dilithium3 parameter set produces. FIPS 204 Table 2 gives 2420 (ML-DSA-44), **3309
+> (ML-DSA-65)** and 4627 (ML-DSA-87). This node implements ML-DSA-65 via Go's
+> `crypto/mldsa` and emits 3309-byte signatures; the spec figure is corrected in
+> [3CP PR #1](https://github.com/had-nu/3CP/pull/1).
+>
+> Sizes come from `pkg/identity` rather than being hard-coded at each use site, and
+> `TestMLDSA65SizesMatchFIPS204` pins them to both `crypto/mldsa` and the FIPS 204
+> table so a dependency bump cannot silently change the wire format. The rotation
+> entry's signature fields are byte strings rather than fixed-size arrays, and
+> validation enforces the exact length.
+
+### Cryptographic primitives
+
+| Primitive | Implementation | Conformance |
+|---|---|---|
+| Signatures | `crypto/mldsa` ML-DSA-65 (Go stdlib) | FIPS 204 |
+| VRF | `circl/expander` + Ristretto255 | RFC 9381 ECVRF |
+| KEM | `circl/kem/kyber/kyber1024` | round-3 Kyber — **not yet FIPS 203** |
+
+Two deliberate choices worth knowing about:
+
+- **Signing keys are held as the 32-byte FIPS 204 seed**, not the 4032-byte expanded
+  form. FIPS 204 §3.1 treats the seed as the canonical signing key, and it is the
+  stronger representation: a malformed expanded key cannot be constructed by an
+  attacker, whereas one cached in memory must be validated before use. It also means
+  `UIDZero.SecretKey` is now 32 bytes on the wire.
+- **Signing is deterministic** (`ML-DSA.Sign_internal`, `rnd = 0`), which keeps genesis
+  and the published test vectors byte-reproducible. FIPS 204's default is hedged
+  signing, which is stronger against fault injection; that trade-off is a deliberate
+  departure, not an oversight.
+
+Kyber remains on circl's round-3 parameterisation. Its sizes already match
+ML-KEM-1024 (1568-byte encaps key and ciphertext, 32-byte shared secret), so this is a
+conformance gap rather than a wire-format one; `crypto/mlkem` is available in the
+toolchain when it is addressed.
+
+#### Upgrading from the round-3 Dilithium3 build
+
+Moving to FIPS 204 ML-DSA-65 changes the signing keys, so this is a **chain reset**,
+not an in-place upgrade. What that means concretely:
+
+- **Validator RootIDs are preserved.** They come from `HKDF(NetworkID, entropy)` under
+  the `3cp:v2:rootid` label and never depended on the Dilithium key derivation, so a
+  node keeps its identity.
+- **Dilithium public keys change**, so any block signed under a round-3 key can no
+  longer be verified. The existing chain must be treated as void.
+- **`UIDZero.SecretKey` is now 32 bytes** instead of 4000. Persisted `uid-N.cbor`
+  identity files from an older build must be regenerated — re-running `provectl init`
+  is sufficient, since identities derive from deterministic seeds.
+- Genesis must be rebuilt, because it commits to the validator set.
+
+Re-verify signatures produced by the old build **before** upgrading anything that
+depends on them; there is no migration path that preserves them, and none is intended.
 
 ## Architecture
 
