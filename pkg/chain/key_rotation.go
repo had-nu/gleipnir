@@ -44,24 +44,25 @@ const (
 	KeyRotationVRFKeySize = 32
 )
 
-// Fixed sizes derived from the Dilithium3 implementation in use (pkg/identity, which
-// wraps circl's round-3 mode3). They are exported so callers can validate wire input
-// (e.g. gRPC requests) without importing pkg/identity.
+// Fixed sizes derived from the signature primitive in use (pkg/identity, which wraps
+// Go's crypto/mldsa). They are exported so callers can validate wire input (e.g. gRPC
+// requests) without importing pkg/identity.
 //
-// NOTE ON THE SPEC'S 2700-BYTE SIGNATURE: 3CP v2.0 §8.1 declares SignatureOld and
-// SignatureNew as `bytes .size 2700`, but no Dilithium3 parameter set produces a
-// 2700-byte signature. FIPS 204 defines 2420 (ML-DSA-44), 3309 (ML-DSA-65) and 4627
-// (ML-DSA-87); the 1952-byte public key this codebase uses is circl round-3 mode3's,
-// whose signatures are 3293 bytes (secret keys 4000). The sizes below are therefore
-// sourced from pkg/identity, the single source of truth, rather than hard-coded — a
-// future switch to a FIPS 204 conformant Dilithium changes one place. Because the
-// spec's fixed size is unachievable, the signature fields are byte strings rather than
-// fixed-size arrays: a [2700]byte field would silently truncate every real signature
-// and make every rotation fail verification.
+// 3CP v2.0 §8.1 declares SignatureOld and SignatureNew as `bytes .size 2700`, but no
+// Dilithium3 parameter set produces a 2700-byte signature; FIPS 204 Table 2 gives
+// 2420 (ML-DSA-44), 3309 (ML-DSA-65) and 4627 (ML-DSA-87). Since the spec also pins
+// the algorithm to ML-DSA-65 — 1952-byte public key, 4032-byte expanded private key,
+// NIST level 3 — 3309 is the intended figure and 2700 was an error, corrected in
+// 3CP PR #1. The sizes below are sourced from pkg/identity, the single source of truth,
+// rather than hard-coded, so a future parameter-set change propagates from one place.
+//
+// The signature fields are byte strings rather than fixed-size arrays so that the
+// encoding does not hard-code a width the protocol text could contradict again;
+// validation enforces the exact length.
 const (
 	KeyRotationPublicKeySize = identity.Dilithium3PublicKeySize // 1952 bytes
-	KeyRotationSecretKeySize = identity.Dilithium3SecretKeySize // 4000 bytes
-	KeyRotationSignatureSize = identity.Dilithium3SignatureSize // 3293 bytes
+	KeyRotationSecretKeySize = identity.Dilithium3SecretKeySize // 32 bytes (seed form)
+	KeyRotationSignatureSize = identity.Dilithium3SignatureSize // 3309 bytes
 )
 
 // KeyRotationEntry is a validator's request to rotate its Dilithium3 signing key and
@@ -85,9 +86,8 @@ type KeyRotationEntry struct {
 	EffectiveCycle  uint64     `cbor:"22,keyasint"`
 	ExpiryCycle     uint64     `cbor:"23,keyasint"`
 	// SignatureOld and SignatureNew are byte strings, not fixed-size arrays — see the
-	// note on KeyRotationSignatureSize for why the spec's 2700-byte size is not usable.
-	// Validate rejects any entry whose signatures are not exactly
-	// KeyRotationSignatureSize bytes.
+	// note on KeyRotationSignatureSize. Validate rejects any entry whose signatures
+	// are not exactly KeyRotationSignatureSize bytes.
 	SignatureOld []byte `cbor:"24,keyasint"`
 	SignatureNew []byte `cbor:"25,keyasint"`
 }
