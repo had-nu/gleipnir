@@ -186,10 +186,20 @@ ML-KEM-1024 (1568-byte encaps key and ciphertext, 32-byte shared secret), so thi
 conformance gap rather than a wire-format one; `crypto/mlkem` is available in the
 toolchain when it is addressed.
 
-#### Upgrading from the round-3 Dilithium3 build
+#### v2 chain reset
 
-Moving to FIPS 204 ML-DSA-65 changes the signing keys, so this is a **chain reset**,
-not an in-place upgrade. What that means concretely:
+Four separate changes in this repository are wire-breaking. Any one of them alone
+justifies a reset; they are listed here so the reset can be done once rather than four
+times.
+
+| # | Change | What breaks on the wire |
+|---|---|---|
+| 1 | Dilithium3 → FIPS 204 ML-DSA-65 | Signing keys, and therefore every signature |
+| 2 | Block CBOR keys renumbered to `block.cddl` | Every block's field numbering |
+| 3 | `MandateEntry` corrected to `mandate.cddl` | Mandate entries, which previously had no usable identifier |
+| 4 | Key rotation entries (§8) | New `3cp:key-rotation:v1` anchored entries |
+
+Concretely:
 
 - **Validator RootIDs are preserved.** They come from `HKDF(NetworkID, entropy)` under
   the `3cp:v2:rootid` label and never depended on the Dilithium key derivation, so a
@@ -199,7 +209,30 @@ not an in-place upgrade. What that means concretely:
 - **`UIDZero.SecretKey` is now 32 bytes** instead of 4000. Persisted `uid-N.cbor`
   identity files from an older build must be regenerated — re-running `provectl init`
   is sufficient, since identities derive from deterministic seeds.
-- Genesis must be rebuilt, because it commits to the validator set.
+- **Blocks written before the renumbering are rejected, not misread.** This is a
+  property worth stating because the alternative would be far worse: the old key 5 held
+  a float and the new key 5 holds an array, so every pre-reset block fails to decode at
+  that key whatever it contains. A tolerant decoder would instead read the old `Lambda1`
+  as `Anchored` and continue with plausible, wrong values. `TestPreRenumberingBlockIsRejected`
+  in `pkg/chain` pins this, so loosening the decoder cannot happen by accident.
+- **Genesis must be rebuilt**, because it commits to the validator set and because its
+  encoding changed.
+- **`legacy_anchor` is now length-checked.** Genesis rejects a hex value that is not 32
+  bytes, since `block.cddl` declares key 18 as `bytes .size 32` and the value is a
+  BLAKE3-256 continuity proof.
+
+Order of operations:
+
+1. Stop every validator. Confirm no cycle is in flight.
+2. Archive the old chain and the old `uid-N.cbor` files. Neither is readable after the
+   reset, so this is the only chance to inspect them.
+3. Re-run `provectl init` on each node to regenerate identities under ML-DSA-65.
+4. Collect the new `Dilithium3PK` and `VRFPK` for each validator and rebuild the
+   genesis block, since it commits to the validator set.
+5. If the chain descends from a v1.0 chain, pass the v1 final block hash as
+   `legacy_anchor` so the continuity proof survives.
+6. Start the validators. Genesis must be byte-identical everywhere, which it will be if
+   step 4 used the same input.
 
 Re-verify signatures produced by the old build **before** upgrading anything that
 depends on them; there is no migration path that preserves them, and none is intended.
