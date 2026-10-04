@@ -131,6 +131,8 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 				Validators:      make([]chain.ValidatorInfo, 0, len(e.peers)),
 				PrepareSigs:     make([][]byte, 0, len(e.peers)),
 				ProtocolVersion: 2,
+				// Reference the key rotation epoch in force for this block (spec §8).
+				KeyRotationEpoch: e.keyRotationEpochLocked(),
 			}
 
 			// Degraded mode: add label to block metadata (spec §5.5)
@@ -213,9 +215,8 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 			return &PrepareResult{Err: fmt.Errorf("block hash mismatch")}
 		}
 
-		// Verify proposer's signature on block hash
-		proposerPubKey := proposer.UID.PublicKey[:]
-		if !identity.VerifyDilithium(proposerPubKey, block.BlockHash, block.PrepareSigs[0]) {
+		// Verify proposer's signature on block hash (overlap-aware, spec §8)
+		if !e.verifySignatureWithOverlap(proposer.UID.RootID, block.BlockHash, block.PrepareSigs[0], cycle) {
 			return &PrepareResult{Err: fmt.Errorf("proposer signature verification failed")}
 		}
 
@@ -260,19 +261,23 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 
 		valid := make(map[string][]byte, len(prepareSigs))
 		for signerID, sig := range prepareSigs {
-			// Find validator public key
-			var pubKey [1952]byte
+			// Find validator identity
+			var signerRootID [16]byte
+			found := false
 			for _, p := range e.peers {
 				if p.UID.ID() == signerID {
-					pubKey = p.UID.PublicKey
+					signerRootID = p.UID.RootID
+					found = true
 					break
 				}
 			}
-			if pubKey == [1952]byte{} {
+			if !found {
 				continue // Unknown validator
 			}
 
-			if identity.VerifyDilithium(pubKey[:], block.BlockHash, sig) {
+			// Overlap-aware verification (spec §8): a validator mid-rotation signs with
+			// either its outgoing or its incoming key, and both must verify.
+			if e.verifySignatureWithOverlap(signerRootID, block.BlockHash, sig, cycle) {
 				valid[signerID] = sig
 			} else {
 				log.Printf("IPC cycle %d: invalid PREPARE signature from %s", cycle, signerID)
