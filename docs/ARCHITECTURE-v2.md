@@ -145,7 +145,7 @@ Block (ciclo N)
     │       ├── Label string
     │       ├── Approver ?[16]byte
     │       ├── Reference ?[32]byte
-    │       ├── Signature ?[2700]byte
+    │       ├── Signature ?[3309]byte
     │       └── MandateRef ?[32]byte
     ├── Lambda1 float64
     ├── Timestamp int64
@@ -156,7 +156,7 @@ Block (ciclo N)
     ├── ProtocolVersion uint16 = 2
     ├── PrepareSigsBitmap []byte (bitfield)
     ├── PrepareSigs [*Dilithium3Sig] (active only)
-    ├── CommitSig [2700]byte (leader's commit)
+    ├── CommitSig [3309]byte (leader's commit)
     ├── ExternalAnchors []string (URIs/CIDs)
     └── KeyRotationEpoch uint64
 
@@ -547,11 +547,11 @@ VRFProofMsg Payload:
 
 PrepareSigMsg Payload:
     ├── BlockHash: [32]byte
-    └── Signature: [2700]byte (Dilithium3)
+    └── Signature: [3309]byte (Dilithium3)
 
 CommitSigMsg Payload:
     ├── BlockHash: [32]byte
-    └── Signature: [2700]byte (Dilithium3)
+    └── Signature: [3309]byte (Dilithium3)
 
 BlockProposalMsg Payload:
     └── Block: chain.Block (CBOR serialized, v2.0 format)
