@@ -25,7 +25,7 @@ type Block struct {
 	ProtocolVersion   uint16       `cbor:"9,keyasint"`   // default: 2
 	PrepareSigsBitmap []byte       `cbor:"10,keyasint"`  // bitfield, N bits
 	PrepareSigs       [][]byte     `cbor:"11,keyasint"`  // only active signers' signatures
-	CommitSig         []byte       `cbor:"12,keyasint"`  // leader's COMMIT signature (2700 bytes)
+	CommitSig         []byte       `cbor:"12,keyasint"`  // leader's COMMIT signature (identity.Dilithium3SignatureSize bytes)
 	ExternalAnchors   []string     `cbor:"13,keyasint"`  // URIs/CIDs of publication
 	KeyRotationEpoch  uint64       `cbor:"14,keyasint"`  // reference cycle for active keys
 	LegacyAnchor      []byte       `cbor:"15,keyasint"`  // H(last v1 block) for migration (genesis only)

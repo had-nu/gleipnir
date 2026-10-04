@@ -13,6 +13,7 @@ import (
 	"github.com/had-nu/gleipnir/pkg/identity"
 	"github.com/had-nu/gleipnir/pkg/smt"
 	"github.com/had-nu/gleipnir/pkg/state"
+	"github.com/had-nu/gleipnir/pkg/validation"
 )
 
 type Engine struct {
@@ -57,6 +58,13 @@ type Engine struct {
 
 	// Anchor Publisher (spec §11.1)
 	anchorPublisher *anchor.AnchorPublisher
+
+	// Key rotation (spec §8). keyRotationValidator owns its own lock so that
+	// overlap-aware signature verification can run while the engine lock is held;
+	// keyRotationBodies is guarded by e.mu and holds the full rotation entries,
+	// which ProvenanceEntry cannot carry (it anchors only hash + label).
+	keyRotationValidator *validation.KeyRotationValidator
+	keyRotationBodies    map[[32]byte]*chain.KeyRotationEntry
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -92,6 +100,9 @@ func NewEngineWithPeers(node Node, cycleInterval time.Duration, gossip GossipCha
 			ContractHash: p.UID.ContractHash,
 		})
 	}
+	// The validator set was populated after newEngine ran, so refresh the key
+	// rotation validator's snapshot of it.
+	eng.registerPeerValidatorSetLocked()
 	return eng
 }
 
@@ -154,6 +165,11 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		VRFPK:        node.UID.VRFPublicKey,
 		ContractHash: node.UID.ContractHash,
 	}}
+
+	// Initialize key rotation (spec §8) after the validator set exists, so the
+	// validator starts from the right key material.
+	eng.initKeyRotationLocked()
+
 	return eng
 }
 
@@ -455,6 +471,10 @@ func (e *Engine) RunCycle() {
 
 	cycle := e.state.Cycle
 
+	// Keep the key rotation validator aligned with the current cycle and validator
+	// set before it is asked to judge anything (spec §8).
+	e.syncKeyRotationStateLocked()
+
 	// Build pending entries: include retained entries from previous aborted cycles
 	allPending := make([]chain.ProvenanceEntry, len(e.pendingEntries))
 	copy(allPending, e.pendingEntries)
@@ -464,6 +484,10 @@ func (e *Engine) RunCycle() {
 		e.state.Cycle++
 		return
 	}
+
+	// Admit any key rotation anchored in this batch before signatures are verified,
+	// so a rotation learned in this cycle is honoured from the next cycle onwards.
+	e.processKeyRotationEntriesLocked(allPending)
 
 	// Determine active validators from ValidatorSet (not all nodes in state)
 	// ValidatorSet contains only the actual consensus validators
