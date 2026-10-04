@@ -31,6 +31,10 @@ const (
 	ProvenanceAnchor_StreamBlocks_FullMethodName        = "/provenance.ProvenanceAnchor/StreamBlocks"
 	ProvenanceAnchor_SubmitKeyRotation_FullMethodName   = "/provenance.ProvenanceAnchor/SubmitKeyRotation"
 	ProvenanceAnchor_GetActivePublicKey_FullMethodName  = "/provenance.ProvenanceAnchor/GetActivePublicKey"
+	ProvenanceAnchor_SubmitMandate_FullMethodName       = "/provenance.ProvenanceAnchor/SubmitMandate"
+	ProvenanceAnchor_CheckCompliance_FullMethodName     = "/provenance.ProvenanceAnchor/CheckCompliance"
+	ProvenanceAnchor_GetActiveMandates_FullMethodName   = "/provenance.ProvenanceAnchor/GetActiveMandates"
+	ProvenanceAnchor_GetMandate_FullMethodName          = "/provenance.ProvenanceAnchor/GetMandate"
 )
 
 // ProvenanceAnchorClient is the client API for ProvenanceAnchor service.
@@ -49,6 +53,15 @@ type ProvenanceAnchorClient interface {
 	// GetActivePublicKey reports which validator keys are authoritative in a cycle,
 	// which is two during a rotation's overlap window (SPEC §8).
 	GetActivePublicKey(ctx context.Context, in *ActiveKeyRequest, opts ...grpc.CallOption) (*ActiveKeyResponse, error)
+	// Mandate compliance (SPEC §13).
+	//
+	// A mandate states what MUST be anchored, so an auditor can later compare the chain
+	// against the obligation. SubmitMandate installs one; CheckCompliance asks whether
+	// the chain so far has honoured it over a window.
+	SubmitMandate(ctx context.Context, in *MandateRequest, opts ...grpc.CallOption) (*MandateResponse, error)
+	CheckCompliance(ctx context.Context, in *ComplianceCheckRequest, opts ...grpc.CallOption) (*ComplianceReport, error)
+	GetActiveMandates(ctx context.Context, in *GetActiveMandatesRequest, opts ...grpc.CallOption) (*GetActiveMandatesResponse, error)
+	GetMandate(ctx context.Context, in *GetMandateRequest, opts ...grpc.CallOption) (*GetMandateResponse, error)
 }
 
 type provenanceAnchorClient struct {
@@ -158,6 +171,46 @@ func (c *provenanceAnchorClient) GetActivePublicKey(ctx context.Context, in *Act
 	return out, nil
 }
 
+func (c *provenanceAnchorClient) SubmitMandate(ctx context.Context, in *MandateRequest, opts ...grpc.CallOption) (*MandateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MandateResponse)
+	err := c.cc.Invoke(ctx, ProvenanceAnchor_SubmitMandate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provenanceAnchorClient) CheckCompliance(ctx context.Context, in *ComplianceCheckRequest, opts ...grpc.CallOption) (*ComplianceReport, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ComplianceReport)
+	err := c.cc.Invoke(ctx, ProvenanceAnchor_CheckCompliance_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provenanceAnchorClient) GetActiveMandates(ctx context.Context, in *GetActiveMandatesRequest, opts ...grpc.CallOption) (*GetActiveMandatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetActiveMandatesResponse)
+	err := c.cc.Invoke(ctx, ProvenanceAnchor_GetActiveMandates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provenanceAnchorClient) GetMandate(ctx context.Context, in *GetMandateRequest, opts ...grpc.CallOption) (*GetMandateResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetMandateResponse)
+	err := c.cc.Invoke(ctx, ProvenanceAnchor_GetMandate_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProvenanceAnchorServer is the server API for ProvenanceAnchor service.
 // All implementations must embed UnimplementedProvenanceAnchorServer
 // for forward compatibility.
@@ -174,6 +227,15 @@ type ProvenanceAnchorServer interface {
 	// GetActivePublicKey reports which validator keys are authoritative in a cycle,
 	// which is two during a rotation's overlap window (SPEC §8).
 	GetActivePublicKey(context.Context, *ActiveKeyRequest) (*ActiveKeyResponse, error)
+	// Mandate compliance (SPEC §13).
+	//
+	// A mandate states what MUST be anchored, so an auditor can later compare the chain
+	// against the obligation. SubmitMandate installs one; CheckCompliance asks whether
+	// the chain so far has honoured it over a window.
+	SubmitMandate(context.Context, *MandateRequest) (*MandateResponse, error)
+	CheckCompliance(context.Context, *ComplianceCheckRequest) (*ComplianceReport, error)
+	GetActiveMandates(context.Context, *GetActiveMandatesRequest) (*GetActiveMandatesResponse, error)
+	GetMandate(context.Context, *GetMandateRequest) (*GetMandateResponse, error)
 	mustEmbedUnimplementedProvenanceAnchorServer()
 }
 
@@ -210,6 +272,18 @@ func (UnimplementedProvenanceAnchorServer) SubmitKeyRotation(context.Context, *K
 }
 func (UnimplementedProvenanceAnchorServer) GetActivePublicKey(context.Context, *ActiveKeyRequest) (*ActiveKeyResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetActivePublicKey not implemented")
+}
+func (UnimplementedProvenanceAnchorServer) SubmitMandate(context.Context, *MandateRequest) (*MandateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SubmitMandate not implemented")
+}
+func (UnimplementedProvenanceAnchorServer) CheckCompliance(context.Context, *ComplianceCheckRequest) (*ComplianceReport, error) {
+	return nil, status.Error(codes.Unimplemented, "method CheckCompliance not implemented")
+}
+func (UnimplementedProvenanceAnchorServer) GetActiveMandates(context.Context, *GetActiveMandatesRequest) (*GetActiveMandatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetActiveMandates not implemented")
+}
+func (UnimplementedProvenanceAnchorServer) GetMandate(context.Context, *GetMandateRequest) (*GetMandateResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMandate not implemented")
 }
 func (UnimplementedProvenanceAnchorServer) mustEmbedUnimplementedProvenanceAnchorServer() {}
 func (UnimplementedProvenanceAnchorServer) testEmbeddedByValue()                          {}
@@ -387,6 +461,78 @@ func _ProvenanceAnchor_GetActivePublicKey_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProvenanceAnchor_SubmitMandate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MandateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvenanceAnchorServer).SubmitMandate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvenanceAnchor_SubmitMandate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvenanceAnchorServer).SubmitMandate(ctx, req.(*MandateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvenanceAnchor_CheckCompliance_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ComplianceCheckRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvenanceAnchorServer).CheckCompliance(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvenanceAnchor_CheckCompliance_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvenanceAnchorServer).CheckCompliance(ctx, req.(*ComplianceCheckRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvenanceAnchor_GetActiveMandates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetActiveMandatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvenanceAnchorServer).GetActiveMandates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvenanceAnchor_GetActiveMandates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvenanceAnchorServer).GetActiveMandates(ctx, req.(*GetActiveMandatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvenanceAnchor_GetMandate_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetMandateRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvenanceAnchorServer).GetMandate(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvenanceAnchor_GetMandate_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvenanceAnchorServer).GetMandate(ctx, req.(*GetMandateRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProvenanceAnchor_ServiceDesc is the grpc.ServiceDesc for ProvenanceAnchor service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -425,6 +571,22 @@ var ProvenanceAnchor_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetActivePublicKey",
 			Handler:    _ProvenanceAnchor_GetActivePublicKey_Handler,
+		},
+		{
+			MethodName: "SubmitMandate",
+			Handler:    _ProvenanceAnchor_SubmitMandate_Handler,
+		},
+		{
+			MethodName: "CheckCompliance",
+			Handler:    _ProvenanceAnchor_CheckCompliance_Handler,
+		},
+		{
+			MethodName: "GetActiveMandates",
+			Handler:    _ProvenanceAnchor_GetActiveMandates_Handler,
+		},
+		{
+			MethodName: "GetMandate",
+			Handler:    _ProvenanceAnchor_GetMandate_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
