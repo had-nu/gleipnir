@@ -4,14 +4,20 @@ package consensus
 import (
 	"encoding/binary"
 	"errors"
-	"log"
+	"fmt"
 
 	"github.com/had-nu/gleipnir/pkg/identity"
 )
 
 type Triad [3][16]byte
 
-var ErrVRFSelectionFailed = errors.New("VRF proposer selection: no valid proofs")
+var (
+	ErrVRFSelectionFailed = errors.New("VRF proposer selection: no valid proofs")
+
+	// ErrIncompleteVRFProofs is returned when VRF proofs are missing for one or more
+	// peers, so the proposer cannot be selected deterministically.
+	ErrIncompleteVRFProofs = errors.New("VRF proposer selection: incomplete proof set")
+)
 
 // SelectProposer selects the proposer using VRF. peerProofs maps peer hex ID → VRFProof.
 // Each peer computes their own VRF proof locally with their secret key, then gossips it.
@@ -27,6 +33,13 @@ func SelectProposer(peers []Peer, cycle uint64, stateRoot []byte,
 // peerProofs maps peer hex ID → VRFProof, each computed locally by the peer.
 // Every proof is cryptographically verified against the peer's VRF public key.
 // The peer with the lowest Gamma (VRF output) is selected.
+//
+// A proof is required for EVERY peer. Selecting the lowest Gamma among whatever
+// proofs happen to have arrived is unsafe: VRF proofs reach validators at different
+// times, so two honest validators holding different subsets could elect different
+// proposers for the same cycle and build different blocks — a fork. Aborting when the
+// proof set is incomplete trades liveness for that safety, and the cycle is simply
+// retried once the missing proofs arrive.
 func SelectProposerVRF(peers []Peer, alpha []byte, peerProofs map[string]*identity.VRFProof) (Peer, *identity.VRFProof, error) {
 	if len(peers) == 0 {
 		return Peer{}, nil, ErrVRFSelectionFailed
@@ -40,14 +53,14 @@ func SelectProposerVRF(peers []Peer, alpha []byte, peerProofs map[string]*identi
 		pid := p.UID.ID()
 		proof, ok := peerProofs[pid]
 		if !ok || proof == nil {
-			continue
+			return Peer{}, nil, fmt.Errorf("%w: no proof from %s", ErrIncompleteVRFProofs, pid)
 		}
 
 		// Verify the proof against this peer's VRF public key
 		gamma, err := p.UID.VRFVerifyProof(alpha, proof)
 		if err != nil {
-			log.Printf("VRF: proof verification failed for peer %s: %v", pid, err)
-			continue
+			return Peer{}, nil, fmt.Errorf("%w: invalid proof from %s: %v",
+				ErrIncompleteVRFProofs, pid, err)
 		}
 
 		if bestGamma == nil || lessThan(gamma, bestGamma) {
