@@ -5,6 +5,24 @@
 **Implementation:** Gleipnir (Go reference implementation)  
 **Status:** COMPREHENSIVE VERIFICATION COMPLETE  
 
+> **Status note added 2026-10-04.** This is a point-in-time analysis of `main` as of
+> 2026-08-25. Since then, **Gap #1 (key rotation)** and **Gap #2 (mandate compliance
+> verification)** have been implemented, and the cryptography has been migrated to
+> FIPS 204 ML-DSA-65. The findings below are retained unedited as the original record;
+> where an implementation detail has since changed, that is flagged inline.
+>
+> | Item | Report says | Actual now |
+> |---|---|---|
+> | Signature size | 2700 bytes | **3309** (FIPS 204 ML-DSA-65) — corrected in 3CP#1, implemented in #41 |
+> | Key rotation (§8) | missing, 70% | **implemented** (#38): entry type, 5 validation rules, overlap-aware verification, gRPC endpoints, TC-ROT-01/02 |
+> | Mandate compliance (§13) | structures only, no logic | **verification core implemented** (#43); engine wiring and gRPC endpoints still open |
+> | `chain.MandateEntry` | present, adequate | **corrected to `mandate.cddl`** (#43) — it previously had no usable ID |
+>
+> The 92/100 score no longer reflects the tree. Gap #3 (light client service) remains
+> unimplemented, and [#42](https://github.com/had-nu/gleipnir/issues/42) records that
+> the spec and the implementation disagree on the block's CBOR key numbering, which
+> prevents third-party verification against the spec.
+
 ---
 
 ## Executive Summary
@@ -36,17 +54,31 @@ The Gleipnir implementation **substantially complies** with the 3CP v2.0 specifi
 - Algorithm: ML-DSA-65 (Dilithium3), FIPS 204
 - Public Key: 1952 bytes
 - Private Key: 4032 bytes
-- Signature: 2700 bytes
+- Signature: 3309 bytes
 - NIST Level: 3 (AES-192 equivalent)
 
 **Implementation (`pkg/identity/dilithium.go`):**
 ```go
+// Go standard library crypto/mldsa, parameter set ML-DSA-65 (FIPS 204).
+// The expanded FIPS 204 signing key is 4032 bytes; it is derived from this
+// 32-byte seed on demand and never stored, per FIPS 204 §3.1.
 const (
-    Dilithium3PublicKeySize  = mode3.PublicKeySize   // 1952 bytes ✅
-    Dilithium3SecretKeySize  = mode3.PrivateKeySize  // 4032 bytes ✅
-    Dilithium3SignatureSize  = mode3.SignatureSize   // 2700 bytes ✅
+    Dilithium3PublicKeySize = 1952 // verifying key
+    Dilithium3SecretKeySize = 32   // signing key seed (canonical form)
+    Dilithium3SignatureSize = 3309 // signature
+    Dilithium3SeedSize      = 32   // ML-DSA.KeyGen seed ξ
 )
 ```
+
+> **Corrected 2026-10-04.** This report previously recorded the signature size as
+> 2700 bytes and marked it correct. No Dilithium3 parameter set produces 2700: FIPS 204
+> Table 2 gives 2420 (ML-DSA-44), 3309 (ML-DSA-65) and 4627 (ML-DSA-87). It also
+> attributed 4032/3309 to `circl/sign/dilithium/mode3`, which in fact emits
+> 3293-byte signatures and 4000-byte expanded keys — circl's `mode3` is the round-3
+> parameterisation (`NIST = false`, ω = 55) and cannot produce 3309 at all.
+>
+> Corrected in [had-nu/3CP#1](https://github.com/had-nu/3CP/pull/1) and implemented
+> in gleipnir #41, which migrates the node to `crypto/mldsa` ML-DSA-65.
 
 **Functions Implemented:**
 - ✅ `GenerateDilithiumKey` - Uses Cloudflare CIRCL library (FIPS 204 compliant)
@@ -200,7 +232,7 @@ func MarshalCBOR(b *Block) ([]byte, error) {
 | **ProtocolVersion** | **12** | **uint16** | **ProtocolVersion** | **✅** |
 | **PrepareSigsBitmap** | **13** | **bytes** | **PrepareSigsBitmap** | **✅** |
 | **PrepareSigs** | **14** | **array** | **PrepareSigs** | **✅** |
-| **CommitSig** | **15** | **2700 bytes** | **CommitSig** | **✅** |
+| **CommitSig** | **15** | **3309 bytes** | **CommitSig** | **✅** |
 | **ExternalAnchors** | **16** | **array** | **ExternalAnchors** | **✅** |
 | **KeyRotationEpoch** | **17** | **uint64** | **KeyRotationEpoch** | **✅** |
 | LegacyAnchor | 18 | 32 bytes | LegacyAnchor | ✅ |
@@ -478,8 +510,8 @@ key-rotation-entry = {
     21 => bytes .size 32,    ; NewVRFPublicKey
     22 => uint64,             ; EffectiveCycle
     23 => uint64,             ; ExpiryCycle
-    24 => bytes .size 2700,  ; SignatureOld
-    25 => bytes .size 2700,  ; SignatureNew
+    24 => bytes .size 3309,  ; SignatureOld
+    25 => bytes .size 3309,  ; SignatureNew
 }
 ```
 

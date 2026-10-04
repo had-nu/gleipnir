@@ -435,7 +435,7 @@ func TestLightClientVerification(t *testing.T) {
     // Teste 4: VerifyBlock - assinatura inválida
     t.Run("VerifyBlockInvalidSignature", func(t *testing.T) {
         block := getTestBlock()
-        block.CommitSig = [2700]byte{0x00}
+        block.CommitSig = [3309]byte{0x00}
         err := service.VerifyBlock(context.Background(), block)
         assert.Error(t, err)
         assert.Contains(t, err.Error(), "COMMIT signature")

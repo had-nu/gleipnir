@@ -42,8 +42,8 @@ type KeyRotationEntry struct {
     NewVRFPublicKey [32]byte  `cbor:"21,keyasint"`
     EffectiveCycle  uint64    `cbor:"22,keyasint"`
     ExpiryCycle     uint64    `cbor:"23,keyasint"`
-    SignatureOld    [2700]byte `cbor:"24,keyasint"`
-    SignatureNew    [2700]byte `cbor:"25,keyasint"`
+    SignatureOld    [3309]byte `cbor:"24,keyasint"`
+    SignatureNew    [3309]byte `cbor:"25,keyasint"`
 }
 
 // NewKeyRotationEntry - Cria entrada com validação das 5 regras (SPEC §8.2)
@@ -254,7 +254,7 @@ func TestKeyRotationValidation(t *testing.T) {
     // Teste 1: Assinatura antiga inválida
     t.Run("InvalidOldSignature", func(t *testing.T) {
         entry := &chain.KeyRotationEntry{
-            SignatureOld: [2700]byte{0x00},
+            SignatureOld: [3309]byte{0x00},
             SignatureNew: getValidSignature(),
         }
         err := validator.Validate(entry)
