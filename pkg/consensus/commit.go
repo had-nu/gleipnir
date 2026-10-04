@@ -88,17 +88,25 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 	}
 
 	// Verify PREPARE quorum in B_final
-	if !verifyPrepareQuorum(finalProposal, e.peers) {
+	if !verifyPrepareQuorum(finalProposal, e.peers, cycle, e) {
 		return &CommitResult{Err: fmt.Errorf("B_final PREPARE quorum verification failed")}
 	}
 
-	// Verify leader's COMMIT signature
-	leaderPubKey := findValidatorPubKey(e.peers, leaderID)
-	if leaderPubKey == [1952]byte{} {
+	// Verify leader's COMMIT signature (overlap-aware, spec §8)
+	var leaderRootID [16]byte
+	leaderFound := false
+	for _, p := range e.peers {
+		if p.UID.ID() == leaderID {
+			leaderRootID = p.UID.RootID
+			leaderFound = true
+			break
+		}
+	}
+	if !leaderFound {
 		return &CommitResult{Err: fmt.Errorf("leader %s not in validator set", leaderID)}
 	}
 
-	if !identity.VerifyDilithium(leaderPubKey[:], finalProposal.BlockHash, finalProposal.CommitSig) {
+	if !e.verifySignatureWithOverlap(leaderRootID, finalProposal.BlockHash, finalProposal.CommitSig, cycle) {
 		return &CommitResult{Err: fmt.Errorf("leader COMMIT signature verification failed")}
 	}
 
@@ -116,7 +124,11 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 }
 
 // verifyPrepareQuorum verifies the PREPARE quorum in a final block.
-func verifyPrepareQuorum(block *chain.Block, peers []Peer) bool {
+//
+// eng may be nil, in which case signatures are checked only against each peer's
+// currently registered key. Callers that hold an engine should pass it so that a
+// validator mid-rotation is accepted with either its outgoing or incoming key (spec §8).
+func verifyPrepareQuorum(block *chain.Block, peers []Peer, cycle uint64, eng *Engine) bool {
 	if block.PrepareSigsBitmap == nil || block.PrepareSigs == nil {
 		return false
 	}
@@ -147,8 +159,12 @@ func verifyPrepareQuorum(block *chain.Block, peers []Peer) bool {
 		}
 		sig := block.PrepareSigs[sigIndex]
 
-		// Verify against validator's public key
-		if !identity.VerifyDilithium(p.UID.PublicKey[:], block.BlockHash, sig) {
+		// Verify against the keys authoritative for this validator in this cycle
+		if eng != nil {
+			if !eng.verifySignatureWithOverlap(p.UID.RootID, block.BlockHash, sig, cycle) {
+				return false
+			}
+		} else if !identity.VerifyDilithium(p.UID.PublicKey[:], block.BlockHash, sig) {
 			return false
 		}
 		verifiedCount++
@@ -166,14 +182,4 @@ func countBitsBefore(bitmap []byte, pos int) int {
 		}
 	}
 	return count
-}
-
-// findValidatorPubKey finds a validator's public key by UID hex.
-func findValidatorPubKey(peers []Peer, uidHex string) [1952]byte {
-	for _, p := range peers {
-		if p.UID.ID() == uidHex {
-			return p.UID.PublicKey
-		}
-	}
-	return [1952]byte{}
 }

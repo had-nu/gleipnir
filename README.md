@@ -58,6 +58,7 @@ A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an i
 - **gRPC client authentication** — `SubmitHash` requires Dilithium3 caller signature verified against registered RootID
 - **Multi-identity entries** — `Approver` field for split-authority submissions, `Reference` field for cross-entry linking
 - **Per-entry non-repudiation** — Dilithium3 signature on each `ProvenanceEntry` binding submitter (and approver) to the anchored content
+- **Validator key rotation** — dual-signed rotation entries with a mandatory key-overlap window, so validators rotate signing keys with zero downtime (see `pkg/chain/key_rotation.go`, `pkg/validation/key_rotation.go`)
 
 ## Compliance narrative
 
@@ -103,6 +104,57 @@ provectl submit --hash <sha256> --label "my-artifact"
 # Verify
 provectl verify --hash <sha256>
 ```
+
+## Validator key rotation
+
+A validator can rotate its Dilithium3 signing key and VRF key without stopping the
+network. A rotation is a provenance entry labelled `3cp:key-rotation:v1` that must be
+signed **twice**: once by the outgoing key (proving the holder of the current key
+authorises the change) and once by the incoming key (proving the submitter actually
+possesses the new one, so nobody else can lock a validator out of its own identity).
+
+Five rules decide validity (`pkg/validation/key_rotation.go`):
+
+| # | Rule | Config knob |
+|---|---|---|
+| 1 | `SignatureOld` verifies under the key in force just before `EffectiveCycle` | — |
+| 2 | `SignatureNew` verifies under `NewPublicKey` | — |
+| 3 | `EffectiveCycle >= currentCycle + KeyRotationLeadTime` | `KeyRotationLeadTime` (10) |
+| 4 | `ExpiryCycle >= EffectiveCycle + MinKeyOverlap` | `MinKeyOverlap` (10) |
+| 5 | `EffectiveCycle` strictly newer than the validator's last accepted rotation | — |
+
+Rules 3 and 4 exist for liveness. The lead time gives the network notice before a
+change takes effect; the overlap window keeps both keys valid at once:
+
+```
+cycle:   ... 19 | 20 ---------- 40 | 41 ...
+active:      old | old + new      | new
+                |-- overlap -----|
+```
+
+During the overlap both keys verify, so peers that have not yet seen the rotation and
+peers that already applied it agree on the same block — that is what makes a rotation
+a non-event rather than a partition. Consecutive rotations chain: once a window
+closes, its incoming key becomes the base the next rotation builds on.
+
+The incoming secret key never has to reach the node. `SubmitKeyRotation` takes the new
+public keys plus a `signature_new` produced elsewhere (an HSM or KMS), and the node
+contributes only its outgoing signature.
+
+```bash
+# Which keys are authoritative for a validator in a cycle?
+grpcurl -plaintext -d '{"cycle": 25}' \
+  localhost:9090 provenance.ProvenanceAnchor/GetActivePublicKey
+```
+
+> **Note on signature size.** 3CP v2.0 §8.1 declares rotation signatures as 2700
+> bytes, but no Dilithium3 parameter set produces that: FIPS 204 specifies 2420
+> (ML-DSA-44), 3309 (ML-DSA-65) and 4627 (ML-DSA-87). The 1952-byte public key this
+> codebase uses comes from circl's round-3 `mode3`, whose signatures are 3293 bytes.
+> Sizes are therefore taken from `pkg/identity` rather than hard-coded, and the
+> rotation entry's signature fields are byte strings rather than fixed-size arrays —
+> a `[2700]byte` field would truncate every real signature and reject every rotation.
+> The same correction applies to the `2700` comment on `Block.CommitSig`.
 
 ## Architecture
 

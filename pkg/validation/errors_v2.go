@@ -46,6 +46,10 @@ var (
 
 	// ErrKeyRotationDuplicate is returned when a key rotation for the same validator/cycle already exists.
 	ErrKeyRotationDuplicate = errors.New("3cp: key rotation already exists for cycle")
+
+	// ErrKeyRotationInvalidEntry is returned when a key rotation entry is malformed
+	// (nil, or missing the "3cp:key-rotation:v1" label).
+	ErrKeyRotationInvalidEntry = errors.New("3cp: invalid key rotation entry")
 )
 
 // v2.0 Mandate Errors
@@ -141,7 +145,7 @@ func IsV2Error(err error) bool {
 	case ErrQuorumNotMet, ErrCycleTimeout, ErrDegradedMode, ErrByzantineLeader,
 		ErrInvalidPrepareSig, ErrInvalidVRFProof, ErrSlashingEvidence, ErrNetworkFragmented,
 		ErrKeyRotationInvalidOldSig, ErrKeyRotationInvalidNewSig, ErrKeyRotationLeadTime,
-		ErrKeyRotationOverlap, ErrKeyRotationDuplicate,
+		ErrKeyRotationOverlap, ErrKeyRotationDuplicate, ErrKeyRotationInvalidEntry,
 		ErrMandateInactive, ErrMandateExpired, ErrMandateSuperseded, ErrMandateAuthorityMismatch,
 		ErrMandateVersionConflict, ErrMandateMissingRequiredField, ErrMandateRefRequired,
 		ErrPendingExpired, ErrMaxCycleDurationExceeded, ErrInvalidCycleDuration,

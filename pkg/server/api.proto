@@ -12,6 +12,46 @@ service ProvenanceAnchor {
   rpc GetHealth(Empty) returns (HealthResponse);
   rpc GetBlock(BlockRequest) returns (Block);
   rpc StreamBlocks(BlockRange) returns (stream Block);
+  // SubmitKeyRotation rotates this node's validator signing key (SPEC §8).
+  rpc SubmitKeyRotation(KeyRotationRequest) returns (KeyRotationResponse);
+  // GetActivePublicKey reports which validator keys are authoritative in a cycle,
+  // which is two during a rotation's overlap window (SPEC §8).
+  rpc GetActivePublicKey(ActiveKeyRequest) returns (ActiveKeyResponse);
+}
+
+// KeyRotationRequest asks the node to rotate its own validator key.
+//
+// signature_new is the incoming key's signature over the canonical rotation payload
+// and is REQUIRED: SPEC §8.2 rule 2 demands the incoming key sign the rotation, and
+// only the holder of that secret key can produce it. The node signs with its outgoing
+// key (rule 1) and never receives the incoming secret key, so a validator can rotate
+// to a key held in an HSM or KMS. Clients compute the payload bytes with
+// chain.KeyRotationPayloadFor and sign them with the new Dilithium3 key.
+message KeyRotationRequest {
+  bytes  new_dilithium_public_key = 1;  // 1952 bytes
+  bytes  new_vrf_public_key      = 2;  // 32 bytes (Ristretto255)
+  uint64 effective_cycle         = 3;
+  uint64 expiry_cycle            = 4;
+  bytes  signature_new           = 5;  // signature by the incoming key
+}
+
+message KeyRotationResponse {
+  bytes  entry_hash    = 1;
+  string status        = 2;  // "pending", "accepted" or "rejected"
+  string error         = 3;
+  string error_code    = 4;
+  uint64 effective_cycle = 5;
+  uint64 expiry_cycle    = 6;
+}
+
+message ActiveKeyRequest {
+  bytes  validator_id = 1;  // 16 bytes; empty means this node
+  uint64 cycle        = 2;
+}
+
+message ActiveKeyResponse {
+  repeated bytes public_keys = 1;  // ordered: outgoing first, then incoming
+  bool           in_overlap   = 2;
 }
 
 message SubmitRequest {

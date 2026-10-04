@@ -11,6 +11,8 @@ import (
 	"github.com/had-nu/gleipnir/pkg/identity"
 	"github.com/had-nu/gleipnir/pkg/validation"
 	pb "github.com/had-nu/gleipnir/pkg/server/pb"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 type Server struct {
@@ -219,6 +221,96 @@ func (s *Server) GetHealth(ctx context.Context, req *pb.Empty) (*pb.HealthRespon
 		PendingHashes: uint64(health.PendingHashes),
 		AvgTps:       0,
 	}, nil
+}
+
+// SubmitKeyRotation rotates this node's validator signing key (SPEC §8).
+//
+// The client supplies the incoming public keys and the incoming key's signature over
+// the canonical rotation payload; the node contributes its outgoing signature. The
+// incoming secret key never reaches this process, so a validator can rotate to a key
+// held in an HSM or KMS.
+//
+// A rotation that violates any of the five rules of SPEC §8.2 is reported as
+// "rejected" with the reason, rather than as a transport error: a rejected rotation is
+// an expected outcome of client input, not a server fault.
+func (s *Server) SubmitKeyRotation(ctx context.Context, req *pb.KeyRotationRequest) (*pb.KeyRotationResponse, error) {
+	if len(req.NewDilithiumPublicKey) != chain.KeyRotationPublicKeySize {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"new Dilithium3 public key must be %d bytes, got %d",
+			chain.KeyRotationPublicKeySize, len(req.NewDilithiumPublicKey))
+	}
+	if len(req.NewVrfPublicKey) != chain.KeyRotationVRFKeySize {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"new VRF public key must be %d bytes, got %d",
+			chain.KeyRotationVRFKeySize, len(req.NewVrfPublicKey))
+	}
+	// Rule 2 of SPEC §8.2 requires the incoming key to sign. Without a client-supplied
+	// signature there is nothing to satisfy it with, and the entry would be rejected
+	// later with a far less obvious error.
+	if len(req.SignatureNew) != chain.KeyRotationSignatureSize {
+		return nil, status.Errorf(codes.InvalidArgument,
+			"signature_new must be %d bytes, got %d",
+			chain.KeyRotationSignatureSize, len(req.SignatureNew))
+	}
+
+	var newPK [chain.KeyRotationPublicKeySize]byte
+	copy(newPK[:], req.NewDilithiumPublicKey)
+	var newVRF [chain.KeyRotationVRFKeySize]byte
+	copy(newVRF[:], req.NewVrfPublicKey)
+
+	entry, err := s.engine.RotateKey(ctx, newPK, newVRF, req.SignatureNew,
+		req.EffectiveCycle, req.ExpiryCycle)
+	if err != nil {
+		resp := &pb.KeyRotationResponse{
+			Status:         "rejected",
+			Error:          err.Error(),
+			EffectiveCycle: req.EffectiveCycle,
+			ExpiryCycle:    req.ExpiryCycle,
+		}
+		if entry != nil {
+			resp.EntryHash = entry.Hash[:]
+		}
+		if code, ok := validation.FromError(err); ok {
+			resp.ErrorCode = code
+		}
+		return resp, nil
+	}
+
+	return &pb.KeyRotationResponse{
+		EntryHash:      entry.Hash[:],
+		Status:         "pending",
+		EffectiveCycle: entry.EffectiveCycle,
+		ExpiryCycle:    entry.ExpiryCycle,
+	}, nil
+}
+
+// GetActivePublicKey reports the validator keys authoritative in a cycle. Two keys are
+// returned during a rotation's overlap window (SPEC §8).
+func (s *Server) GetActivePublicKey(ctx context.Context, req *pb.ActiveKeyRequest) (*pb.ActiveKeyResponse, error) {
+	validatorID := s.engine.NodeUID().RootID
+	if len(req.ValidatorId) > 0 {
+		if len(req.ValidatorId) != 16 {
+			return nil, status.Errorf(codes.InvalidArgument,
+				"validator_id must be 16 bytes, got %d", len(req.ValidatorId))
+		}
+		copy(validatorID[:], req.ValidatorId)
+	}
+
+	cycle := req.Cycle
+	if req.Cycle == 0 {
+		cycle = s.engine.Cycle()
+	}
+
+	keys, err := s.engine.KeyRotationValidator().GetActivePublicKey(validatorID, cycle)
+	if err != nil {
+		return nil, status.Errorf(codes.NotFound, "no active key for validator: %v", err)
+	}
+
+	out := make([][]byte, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k[:])
+	}
+	return &pb.ActiveKeyResponse{PublicKeys: out, InOverlap: len(keys) > 1}, nil
 }
 
 func (s *Server) GetBlock(ctx context.Context, req *pb.BlockRequest) (*pb.Block, error) {
