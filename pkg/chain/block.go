@@ -11,27 +11,40 @@ import (
 )
 
 // Block represents a block in the 3CP chain v2.0.
+//
+// Wire keys follow spec/schemas/block.cddl exactly: each field below carries the key
+// the schema assigns it, and the fields are declared in ascending key order so the
+// struct reads as the schema does. Keys 4 and 8 have no field. Both are reserved
+// (Triad, and Sigs as it was named in v1.0) and the schema marks them optional,
+// because genesis.cddl omits them too. Emitting them would put bytes on the wire
+// that no conformant verifier reads, while omitting them keeps key numbering aligned
+// with the spec — which is the whole point of the numeric keys.
+//
+// Validators is the canonical validator set of §7.1, not a list of bare public keys.
+// It has to carry each validator's VRFPK: §7.2 requires VRFProof verification to use
+// the peer's VRFPK taken from network state, so a list of Dilithium3 keys alone would
+// leave a verifier with nowhere to get it.
 type Block struct {
-	Index     uint64            `cbor:"0,keyasint"`
-	PrevHash  []byte            `cbor:"1,keyasint"`
-	StateRoot []byte            `cbor:"2,keyasint"`
-	Proposer  [16]byte          `cbor:"3,keyasint"`
-	Anchored  []ProvenanceEntry `cbor:"4,keyasint"`
-	Lambda1   float64           `cbor:"5,keyasint"`
-	Timestamp int64             `cbor:"6,keyasint"`
-	Quorum    QuorumConfig      `cbor:"7,keyasint"`
-	BlockHash []byte            `cbor:"8,keyasint"`
-
-	// v2.0 fields (MUST in v2 networks)
-	ProtocolVersion   uint16            `cbor:"9,keyasint"`  // default: 2
-	PrepareSigsBitmap []byte            `cbor:"10,keyasint"` // bitfield, N bits
-	PrepareSigs       [][]byte          `cbor:"11,keyasint"` // only active signers' signatures
-	CommitSig         []byte            `cbor:"12,keyasint"` // leader's COMMIT signature (identity.Dilithium3SignatureSize bytes)
-	ExternalAnchors   []string          `cbor:"13,keyasint"` // URIs/CIDs of publication
-	KeyRotationEpoch  uint64            `cbor:"14,keyasint"` // reference cycle for active keys
-	LegacyAnchor      []byte            `cbor:"15,keyasint"` // H(last v1 block) for migration (genesis only)
-	Metadata          map[string][]byte `cbor:"16,keyasint"` // Extended metadata (e.g., degraded label)
-	Validators        []ValidatorInfo   `cbor:"17,keyasint"` // Canonical validator set
+	Index     uint64   `cbor:"0,keyasint"`
+	PrevHash  []byte   `cbor:"1,keyasint"`
+	StateRoot []byte   `cbor:"2,keyasint"`
+	Proposer  [16]byte `cbor:"3,keyasint"`
+	// key 4: Triad, reserved — absent
+	Anchored  []ProvenanceEntry `cbor:"5,keyasint"`
+	Lambda1   float64           `cbor:"6,keyasint"`
+	Timestamp int64             `cbor:"7,keyasint"`
+	// key 8: Sigs, reserved in ProtocolVersion == 2 — absent
+	Validators        []ValidatorInfo   `cbor:"9,keyasint"`  // canonical validator set (§7.1)
+	Quorum            QuorumConfig      `cbor:"10,keyasint"` // TotalValidators, RequiredSigs
+	BlockHash         []byte            `cbor:"11,keyasint"`
+	ProtocolVersion   uint16            `cbor:"12,keyasint"` // default: 2
+	PrepareSigsBitmap []byte            `cbor:"13,keyasint"` // bit i set iff validator i signed PREPARE
+	PrepareSigs       [][]byte          `cbor:"14,keyasint"` // sole PREPARE-signature field in v2; bitmap order
+	CommitSig         []byte            `cbor:"15,keyasint"` // leader's COMMIT signature (identity.Dilithium3SignatureSize bytes)
+	ExternalAnchors   []string          `cbor:"16,keyasint"` // URIs/CIDs of publication
+	KeyRotationEpoch  uint64            `cbor:"17,keyasint"` // reference cycle for active keys
+	LegacyAnchor      []byte            `cbor:"18,keyasint"` // H(last v1 block) for migration (genesis only)
+	Metadata          map[string][]byte `cbor:"19,keyasint"` // extended metadata (§5.5), e.g. "3cp:degraded-block"
 }
 
 // ProvenanceEntry represents an anchored provenance entry v2.0.
