@@ -13,10 +13,10 @@ import (
 // In degraded mode, finality is 1-of-N (any single signature suffices).
 // Blocks carry the label "3cp:degraded-block" in Metadata.
 type DegradedMode struct {
-	MinValidators    uint64 // From mandate (default: 4)
-	GraceCycles      uint64 // From mandate (default: 10)
+	MinValidators     uint64 // From mandate (default: 4)
+	GraceCycles       uint64 // From mandate (default: 10)
 	consecutiveNormal uint64 // Cycles with N >= MinValidators and normal quorum
-	inDegraded       bool
+	inDegraded        bool
 }
 
 // NewDegradedMode creates a new degraded mode handler.
@@ -70,19 +70,36 @@ func (d *DegradedMode) ApplyDegradedBlock(block *chain.Block, peers []Peer, myUI
 		return nil
 	}
 
-	// In degraded mode, any single valid signature suffices
-	// Find the first valid signature from PrepareSigs
-	var validSig []byte
-	for i, sig := range block.PrepareSigs {
-		if sig == nil || len(sig) == 0 {
+	// In degraded mode any single valid signature suffices.
+	//
+	// PrepareSigs is ordered by set bit in PrepareSigsBitmap, NOT by peer index, so the
+	// signer of each signature has to be recovered through the bitmap. Indexing
+	// PrepareSigs by peer position verifies signatures against the wrong keys whenever
+	// the signing set is not a prefix of the validator set.
+	sigIdx := 0
+	validSig := []byte(nil)
+	validPeerIdx := -1
+
+	for peerIdx := range peers {
+		if peerIdx/8 >= len(block.PrepareSigsBitmap) {
+			break
+		}
+		if block.PrepareSigsBitmap[peerIdx/8]&(1<<(peerIdx%8)) == 0 {
 			continue
 		}
-		if i < len(peers) {
-			pubKey := peers[i].UID.PublicKey[:]
-			if identity.VerifyDilithium(pubKey, block.BlockHash, sig) {
-				validSig = sig
-				break
-			}
+		if sigIdx >= len(block.PrepareSigs) {
+			break
+		}
+		sig := block.PrepareSigs[sigIdx]
+		sigIdx++
+		if len(sig) == 0 {
+			continue
+		}
+		pubKey := peers[peerIdx].UID.PublicKey[:]
+		if identity.VerifyDilithium(pubKey, block.BlockHash, sig) {
+			validSig = sig
+			validPeerIdx = peerIdx
+			break
 		}
 	}
 
@@ -90,10 +107,13 @@ func (d *DegradedMode) ApplyDegradedBlock(block *chain.Block, peers []Peer, myUI
 		return fmt.Errorf("no valid signature in degraded mode")
 	}
 
-	// Keep only the valid signature in PrepareSigs
+	// Keep only the valid signature, and rewrite the bitmap so it still describes the
+	// surviving signature. Leaving stale bits set would make verifyPrepareQuorum index
+	// past the end of PrepareSigs and reject the block on every other node.
 	block.PrepareSigs = [][]byte{validSig}
-	// Update bitmap to reflect only the valid signer
-	// This is simplified - in practice we'd need to update PrepareSigsBitmap
+	bitmap := make([]byte, (len(peers)+7)/8)
+	bitmap[validPeerIdx/8] |= 1 << (validPeerIdx % 8)
+	block.PrepareSigsBitmap = bitmap
 
 	// Add degraded block label to Metadata
 	if block.Metadata == nil {
