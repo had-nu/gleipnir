@@ -11,9 +11,9 @@ import (
 
 // CommitResult contains the result of the COMMIT phase.
 type CommitResult struct {
-	Block        *chain.Block // Final block B_final
-	Committed    bool         // Whether block was committed
-	Err          error        // Error if any
+	Block     *chain.Block // Final block B_final
+	Committed bool         // Whether block was committed
+	Err       error        // Error if any
 }
 
 // RunCommitPhase executes the COMMIT phase of consensus.
@@ -44,7 +44,7 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 		// Create final block with v2.0 fields
 		finalBlock := *block // Copy candidate block
 		finalBlock.PrepareSigsBitmap = prepareResult.PrepareBitmap
-		
+
 		// Convert PrepareSigs map to slice in bitmap order
 		prepareSigsSlice := make([][]byte, 0)
 		for i, p := range e.peers {
@@ -65,7 +65,7 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 
 		// Broadcast B_final
 		if e.gossip != nil {
-			e.gossip.Propose(finalBlock, myUIDHex)
+			e.gossip.PublishFinal(finalBlock, myUIDHex)
 		}
 
 		return &CommitResult{
@@ -79,7 +79,10 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 		return &CommitResult{Err: fmt.Errorf("no gossip in multi-node mode")}
 	}
 
-	finalProposal := e.gossip.GetProposed(cycle)
+	// Read the leader's finalised block, not the candidate: they differ in
+	// PrepareSigsBitmap and PrepareSigs, and only the final carries the quorum the
+	// COMMIT phase is meant to check.
+	finalProposal := e.gossip.GetFinal(cycle)
 	if finalProposal == nil {
 		return &CommitResult{Err: fmt.Errorf("no B_final from leader")}
 	}

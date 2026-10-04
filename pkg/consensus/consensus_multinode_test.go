@@ -3,6 +3,7 @@ package consensus
 
 import (
 	"bytes"
+	"sync"
 	"testing"
 	"time"
 
@@ -26,16 +27,46 @@ func makePeersAndNodes(seeds ...string) ([]Peer, []Node) {
 	return peers, nodes
 }
 
-func triadToIndices(peers []Peer, triad Triad) []int {
-	indices := make([]int, 3)
-	rootIDToIndex := make(map[[16]byte]int)
-	for i, p := range peers {
-		rootIDToIndex[p.UID.RootID] = i
+// seedVRFProofs publishes every peer's VRF proof for cycle 0 to the bus before any
+// engine runs the cycle.
+//
+// Proposer selection requires a proof from every peer (see SelectProposerVRF), and in
+// production those proofs arrive over gossip while the cycle is already in flight.
+// Seeding them here removes that timing race from the test so the assertions below
+// measure consensus behaviour rather than goroutine scheduling.
+func seedVRFProofs(t *testing.T, bus *MemoryBus, peers []Peer, cycle uint64, stateRoot [32]byte) {
+	t.Helper()
+	alpha := makeAlpha(cycle, stateRoot[:])
+	for _, p := range peers {
+		proof, err := p.UID.VRFProve(alpha)
+		if err != nil {
+			t.Fatalf("VRFProve for %s: %v", p.Addr, err)
+		}
+		bus.PublishVRFProof(VRFProofMsg{
+			Cycle:    cycle,
+			Proof:    identity.MarshalVRFProof(proof),
+			SignerID: p.UID.ID(),
+		})
 	}
-	for i, rootID := range triad {
-		indices[i] = rootIDToIndex[rootID]
+}
+
+// runCyclesConcurrently runs one cycle on every engine at the same time and waits for
+// all of them, mirroring production where each node drives its own cycleLoop.
+//
+// Running the engines one after another cannot produce a block: the first engine to
+// run finds no proposal from the elected proposer and the last one to run finds no
+// second signature, so quorum is unreachable by construction. Concurrency is part of
+// the protocol's operating model, not a test convenience.
+func runCyclesConcurrently(engines []*Engine) {
+	var wg sync.WaitGroup
+	for _, eng := range engines {
+		wg.Add(1)
+		go func(e *Engine) {
+			defer wg.Done()
+			e.RunCycle()
+		}(eng)
 	}
-	return indices
+	wg.Wait()
 }
 
 func TestMultiNodeConsensusDeterministic(t *testing.T) {
@@ -61,13 +92,12 @@ func TestMultiNodeConsensusDeterministic(t *testing.T) {
 	var rootArr [32]byte
 	var t2 [32]byte = engines[0].st.Root()
 	copy(rootArr[:], t2[:])
+	seedVRFProofs(t, bus, peers, 0, rootArr)
 	proposer, proof, _ := SelectProposer(peers, 0, rootArr[:], vrfProofsForPeers(peers, 0, rootArr[:]))
 	_ = proposer
 	_ = proof
-	
-	for _, idx := range []int{0, 1, 2} {
-		engines[idx].RunCycle()
-	}
+
+	runCyclesConcurrently(engines)
 
 	for i, eng := range engines {
 		if eng.BlockCount() != 1 {
@@ -86,7 +116,7 @@ func TestMultiNodeConsensusDeterministic(t *testing.T) {
 	// Cycle 1
 	for i, eng := range engines {
 		eng.Enqueue(chain.ProvenanceEntry{
-			Hash:      [32]byte{10 + byte(i + 1)},
+			Hash:      [32]byte{10 + byte(i+1)},
 			Submitter: peers[i].UID.RootID,
 		})
 	}
@@ -94,11 +124,8 @@ func TestMultiNodeConsensusDeterministic(t *testing.T) {
 	var rootArr2 [32]byte
 	var temp2 [32]byte = engines[0].st.Root()
 	copy(rootArr2[:], temp2[:])
-	triad := SelectTriad(peers, 0, len(peers))
-	indices := triadToIndices(peers, triad)
-	for _, idx := range indices {
-		engines[idx].RunCycle()
-	}
+	seedVRFProofs(t, bus, peers, 1, rootArr2)
+	runCyclesConcurrently(engines)
 
 	for i, eng := range engines {
 		if eng.BlockCount() != 2 {
@@ -113,14 +140,15 @@ func TestMultiNodeConsensusDeterministic(t *testing.T) {
 		}
 	}
 
-	// Verify all hashes anchored
+	// Verify all hashes anchored. Each cycle submits one entry per peer, so there are
+	// three hashes per cycle, not four.
 	for _, eng := range engines {
-		for i := 0; i < 4; i++ {
+		for i := 0; i < len(peers); i++ {
 			proof, ok := eng.LookupHash([32]byte{byte(i + 1)})
 			if !ok || !proof.Found {
 				t.Fatalf("missing hash %d", i+1)
 			}
-			proof, ok = eng.LookupHash([32]byte{10 + byte(i + 1)})
+			proof, ok = eng.LookupHash([32]byte{10 + byte(i+1)})
 			if !ok || !proof.Found {
 				t.Fatalf("missing hash %d", 10+i+1)
 			}
@@ -138,6 +166,16 @@ func TestMultiNodeProposerDeterministic(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		engines[i] = NewEngineWithPeers(nodes[i], time.Hour, bus, peers)
 		engines[i].cfg.MinLambda1 = 0.001
+		engines[i].cfg.SkipEmptyCycles = false
+	}
+
+	// The proposer has nothing to build a block from without pending entries, so this
+	// test needs them even though its subject is proposer determinism.
+	for i := 0; i < 3; i++ {
+		engines[i].Enqueue(chain.ProvenanceEntry{
+			Hash:      [32]byte{byte(i + 1)},
+			Submitter: peers[i].UID.RootID,
+		})
 	}
 
 	// All engines compute VRF for cycle 0
@@ -163,11 +201,8 @@ func TestMultiNodeProposerDeterministic(t *testing.T) {
 	var rootArr2 [32]byte
 	var temp2 [32]byte = engines[0].st.Root()
 	copy(rootArr2[:], temp2[:])
-	triad := SelectTriad(peers, 0, len(peers))
-	indices := triadToIndices(peers, triad)
-	for _, idx := range indices {
-		engines[idx].RunCycle()
-	}
+	seedVRFProofs(t, bus, peers, 0, rootArr2)
+	runCyclesConcurrently(engines)
 
 	for i, eng := range engines {
 		if eng.BlockCount() != 1 {
@@ -190,6 +225,10 @@ func TestMultiNodeEdgesAndLambda(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		engines[i] = NewEngineWithPeers(nodes[i], time.Hour, bus, peers)
 		engines[i].cfg.MinLambda1 = 0.001
+		// Entries are submitted to engine 0 only, so the other engines have nothing in
+		// their own pending queue. Without this they would skip the cycle entirely and
+		// never contribute a signature, leaving the proposer short of quorum.
+		engines[i].cfg.SkipEmptyCycles = false
 	}
 
 	// Add all 3 entries
@@ -204,11 +243,8 @@ func TestMultiNodeEdgesAndLambda(t *testing.T) {
 	var rootArr [32]byte
 	var t2 [32]byte = engines[0].st.Root()
 	copy(rootArr[:], t2[:])
-	triad := SelectTriad(peers, 0, len(peers))
-	indices := triadToIndices(peers, triad)
-	for _, idx := range indices {
-		engines[idx].RunCycle()
-	}
+	seedVRFProofs(t, bus, peers, 0, rootArr)
+	runCyclesConcurrently(engines)
 
 	for i, eng := range engines {
 		if eng.BlockCount() != 1 {

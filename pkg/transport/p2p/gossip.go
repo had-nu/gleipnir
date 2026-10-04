@@ -34,22 +34,23 @@ const (
 )
 
 type Config struct {
-	ListenAddrs      []string
-	BootstrapPeers   []string
-	EnableMDNS       bool
-	MDNSServiceTag   string
-	PrivateKeyFile   string
-	NodeID           string
+	ListenAddrs    []string
+	BootstrapPeers []string
+	EnableMDNS     bool
+	MDNSServiceTag string
+	PrivateKeyFile string
+	NodeID         string
 }
 
 type GossipBus struct {
-	host       host.Host
-	discovery  mdns.Service
-	notifee    *mdnsNotifee //nolint:unused
+	host      host.Host
+	discovery mdns.Service
+	notifee   *mdnsNotifee //nolint:unused
 
 	mu        sync.Mutex
 	pending   []chain.ProvenanceEntry
 	proposals map[uint64]*chain.Block
+	finals    map[uint64]*chain.Block
 	sigs      map[uint64][]consensus.BlockSig
 	connected map[peer.ID]bool
 
@@ -123,12 +124,13 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 
 	notifee := &mdnsNotifee{bus: nil}
 	bus := &GossipBus{
-		host:       h,
-		proposals:  make(map[uint64]*chain.Block),
-		sigs:       make(map[uint64][]consensus.BlockSig),
-		connected:  make(map[peer.ID]bool),
-		ctx:        ctx,
-		cancel:     cancel,
+		host:      h,
+		proposals: make(map[uint64]*chain.Block),
+		finals:    make(map[uint64]*chain.Block),
+		sigs:      make(map[uint64][]consensus.BlockSig),
+		connected: make(map[peer.ID]bool),
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 	notifee.bus = bus
 
@@ -214,19 +216,46 @@ func (b *GossipBus) RemoveEntries(remove map[[32]byte]bool) {
 	b.pending = kept
 }
 
+// Propose stores a candidate block for a cycle.
+//
+// First-write-wins, matching MemoryBus: a proposer must not be able to replace the
+// candidate after validators have begun verifying it.
 func (b *GossipBus) Propose(block chain.Block, proposerID string) {
 	b.mu.Lock()
-	b.proposals[block.Index] = &block
+	_, exists := b.proposals[block.Index]
+	if !exists {
+		b.proposals[block.Index] = chain.CloneBlock(&block)
+	}
 	b.mu.Unlock()
-	b.broadcastProposal(block)
+	if !exists {
+		b.broadcastProposal(block)
+	}
 }
 
 func (b *GossipBus) GetProposed(cycle uint64) *chain.Block {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if p, ok := b.proposals[cycle]; ok {
-		cp := *p
-		return &cp
+		return chain.CloneBlock(p)
+	}
+	return nil
+}
+
+// PublishFinal stores the leader's finalised block for a cycle and gossips it.
+func (b *GossipBus) PublishFinal(block chain.Block, proposerID string) {
+	b.mu.Lock()
+	b.finals[block.Index] = chain.CloneBlock(&block)
+	b.mu.Unlock()
+	b.broadcastProposal(block)
+}
+
+// GetFinal returns the finalised block for a cycle, or nil if the leader has not
+// committed one yet.
+func (b *GossipBus) GetFinal(cycle uint64) *chain.Block {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if p, ok := b.finals[cycle]; ok {
+		return chain.CloneBlock(p)
 	}
 	return nil
 }

@@ -63,8 +63,17 @@ func GenerateKyberKeyPairFromSeed(seed []byte) (publicKey []byte, secretKey []by
 	return pkBytes, skBytes, nil
 }
 
-// Encapsulate performs KEM encapsulation: generates shared secret and ciphertext.
-func Encapsulate(publicKey []byte) (sharedSecret []byte, ciphertext []byte, err error) {
+// Encapsulate performs KEM encapsulation against publicKey.
+//
+// It returns the CIPHERTEXT FIRST and the shared secret second, matching the
+// conventional KEM ordering used by circl's EncapsulateTo(ct, ss, rand) and by the
+// handshake in pkg/transport. The ciphertext is the value that goes on the wire;
+// the shared secret must never leave the process.
+//
+// The two values are easy to confuse by name, so callers should keep them positional
+// only where the types cannot be mixed up, and callers that pass either across a
+// function boundary should prefer the size-checked helpers below.
+func Encapsulate(publicKey []byte) (ciphertext []byte, sharedSecret []byte, err error) {
 	if len(publicKey) != Kyber1024PublicKeySize {
 		return nil, nil, ErrKyberInvalidKey
 	}
@@ -76,7 +85,7 @@ func Encapsulate(publicKey []byte) (sharedSecret []byte, ciphertext []byte, err 
 	ss := make([]byte, Kyber1024SharedKeySize)
 	pk.EncapsulateTo(ct, ss, nil)
 
-	return ss, ct, nil
+	return ct, ss, nil
 }
 
 // Decapsulate performs KEM decapsulation: recovers shared secret from ciphertext.

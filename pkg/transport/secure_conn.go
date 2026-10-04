@@ -55,6 +55,9 @@ func kemHandshake(conn net.Conn, sk, pk []byte, peerID string, dialer bool) (*Se
 	var sharedSecret []byte
 
 	if dialer {
+		// identity.Encapsulate returns (ciphertext, sharedSecret, err) — ciphertext
+		// first, per the KEM convention. Do not swap these: sending the shared secret
+		// instead of the ciphertext both deadlocks the peer and leaks the key.
 		ct, ss, err := identity.Encapsulate(peerInfo.PublicKey)
 		if err != nil {
 			return nil, PeerInfo{}, err
