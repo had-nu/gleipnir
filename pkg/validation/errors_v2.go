@@ -54,6 +54,13 @@ var (
 
 // v2.0 Mandate Errors
 var (
+	// ErrInvalidMandateEntry is returned when a mandate or the entry referencing it is
+	// malformed.
+	ErrInvalidMandateEntry = errors.New("3cp: invalid mandate entry")
+
+	// ErrMandateNotFound is returned when a referenced mandate is unknown.
+	ErrMandateNotFound = errors.New("3cp: mandate not found")
+
 	// ErrMandateInactive is returned when a mandate is not yet active.
 	ErrMandateInactive = errors.New("3cp: mandate not yet active")
 
@@ -74,6 +81,10 @@ var (
 
 	// ErrMandateRefRequired is returned when entry matches mandatory rule but has no MandateRef.
 	ErrMandateRefRequired = errors.New("3cp: mandate reference required")
+
+	// ErrComplianceWindowInvalid is returned when a compliance window is empty or
+	// inverted.
+	ErrComplianceWindowInvalid = errors.New("3cp: invalid compliance window")
 )
 
 // v2.0 Network/Cycle Errors
@@ -148,6 +159,7 @@ func IsV2Error(err error) bool {
 		ErrKeyRotationOverlap, ErrKeyRotationDuplicate, ErrKeyRotationInvalidEntry,
 		ErrMandateInactive, ErrMandateExpired, ErrMandateSuperseded, ErrMandateAuthorityMismatch,
 		ErrMandateVersionConflict, ErrMandateMissingRequiredField, ErrMandateRefRequired,
+		ErrInvalidMandateEntry, ErrMandateNotFound, ErrComplianceWindowInvalid,
 		ErrPendingExpired, ErrMaxCycleDurationExceeded, ErrInvalidCycleDuration,
 		ErrSkipEmptyCyclesDisabled,
 		ErrPublisherNonCompliant, ErrInsufficientRedundancy, ErrInvalidPublisherConfig,
