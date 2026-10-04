@@ -5,7 +5,7 @@ go 1.27
 require (
 	github.com/bwesterb/go-ristretto v1.2.4
 	github.com/cloudflare/circl v1.6.5
-	github.com/fxamacker/cbor/v2 v2.9.3
+	github.com/fxamacker/cbor/v2 v2.9.4
 	github.com/ipfs/go-cid v0.6.2
 	github.com/libp2p/go-libp2p v0.50.0
 	github.com/multiformats/go-multiaddr v0.16.1
