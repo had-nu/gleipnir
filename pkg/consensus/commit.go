@@ -81,8 +81,9 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 
 	// Read the leader's finalised block, not the candidate: they differ in
 	// PrepareSigsBitmap and PrepareSigs, and only the final carries the quorum the
-	// COMMIT phase is meant to check.
-	finalProposal := e.gossip.GetFinal(cycle)
+	// COMMIT phase is meant to check. Wait for it, since the leader finalises only
+	// after collecting every validator's signature.
+	finalProposal := e.waitForFinal(e.ctx, cycle, e.proposalWait())
 	if finalProposal == nil {
 		return &CommitResult{Err: fmt.Errorf("no B_final from leader")}
 	}

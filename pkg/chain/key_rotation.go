@@ -33,6 +33,10 @@ var (
 	// ErrHashMismatch is returned when a decoded entry's Hash does not commit to its
 	// contents.
 	ErrHashMismatch = errors.New("3cp: key rotation entry hash mismatch")
+
+	// ErrMandateHashMismatch is returned when a decoded mandate's ID does not commit to
+	// its contents.
+	ErrMandateHashMismatch = errors.New("3cp: mandate id mismatch")
 )
 
 const (
