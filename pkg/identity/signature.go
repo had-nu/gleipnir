@@ -3,8 +3,6 @@ package identity
 import (
 	"encoding/binary"
 	"encoding/hex"
-
-	"github.com/cloudflare/circl/sign/dilithium/mode3"
 )
 
 // CanonicalPayload creates a deterministic payload for signing/verification
@@ -34,24 +32,15 @@ func SignPayload(secretKey []byte, hash []byte, submitter []byte, timestamp int6
 	return SignDilithium(secretKey, payload)
 }
 
-// VerifyDilithium3 verifies a Dilithium3 signature
+// VerifyDilithium3 verifies an ML-DSA-65 signature.
 func VerifyDilithium3(pubKey []byte, payload []byte, signature []byte) bool {
-	pk := &mode3.PublicKey{}
-	if err := pk.UnmarshalBinary(pubKey); err != nil {
-		return false
-	}
-	return mode3.Verify(pk, payload, signature)
+	return VerifyDilithium(pubKey, payload, signature)
 }
 
-// SignDilithium3 signs a payload with Dilithium3
+// SignDilithium3 signs a payload with ML-DSA-65.
+// The secret key is the canonical 32-byte seed form; see SignDilithium.
 func SignDilithium3(secretKey []byte, payload []byte) []byte {
-	sk := &mode3.PrivateKey{}
-	if err := sk.UnmarshalBinary(secretKey); err != nil {
-		return nil
-	}
-	sig := make([]byte, mode3.SignatureSize)
-	mode3.SignTo(sk, payload, sig)
-	return sig
+	return SignDilithium(secretKey, payload)
 }
 
 // PublicKeyHex returns hex encoding of a public key
