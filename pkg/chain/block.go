@@ -131,10 +131,17 @@ func (m *MandateEntry) IsActiveAt(timestamp int64) bool {
 	return m.ValidUntil == 0 || timestamp <= m.ValidUntil
 }
 
-// MarshalPayloadCBOR encodes the mandate excluding Signature, which is the exact byte
-// string the Authority signs and that MandateID is computed over.
+// MarshalPayloadCBOR encodes the mandate excluding both Signature and ID, which is the
+// exact byte string the Authority signs and that MandateID is computed over.
+//
+// Both derived fields have to be excluded, for the same reason MandateID excludes both:
+// the identifier is a function of the payload, so leaving it in would make signing
+// depend on whether the identifier had already been assigned. A verifier that cleared
+// only the signature would recompute a different string than the signer used and reject
+// every mandate.
 func (m *MandateEntry) MarshalPayloadCBOR() ([]byte, error) {
 	clone := *m
+	clone.ID = [32]byte{}
 	clone.Signature = nil
 	return deterministicMode.Marshal(&clone)
 }
