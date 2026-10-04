@@ -411,6 +411,38 @@ func (e *Engine) waitForSignatures(
 	}
 }
 
+// waitForFinal polls the gossip bus for the leader's finalised block for cycle.
+//
+// Validators finish their PREPARE quorum check and enter COMMIT before the leader has
+// finished gathering signatures and finalised the block, so without a wait a validator
+// routinely looks for B_final microseconds before it exists and aborts the cycle. The
+// wait is bounded and ctx-interruptible, so a leader that stalls degrades to an aborted
+// cycle rather than a hang.
+func (e *Engine) waitForFinal(ctx context.Context, cycle uint64, timeout time.Duration) *chain.Block {
+	if timeout <= 0 {
+		return e.gossip.GetFinal(cycle)
+	}
+
+	const pollInterval = 2 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		if block := e.gossip.GetFinal(cycle); block != nil {
+			return block
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return nil
+			}
+		}
+	}
+}
+
 // quorumRequired computes the required quorum: ceil(2N/3).
 func quorumRequired(n int) int {
 	return (2*n + 2) / 3
