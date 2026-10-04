@@ -20,18 +20,18 @@ import (
 
 // GenesisSpec defines the input specification for genesis block creation.
 type GenesisSpec struct {
-	NetworkName string          `yaml:"network_name"`
-	CreatedAt   int64           `yaml:"created_at"`
-	Validators  []ValidatorSpec `yaml:"validators"`
-	Mandate     MandateSpec     `yaml:"mandate"`
-	LegacyAnchor string         `yaml:"legacy_anchor"` // hex-encoded H(B_final) from v1
+	NetworkName  string          `yaml:"network_name"`
+	CreatedAt    int64           `yaml:"created_at"`
+	Validators   []ValidatorSpec `yaml:"validators"`
+	Mandate      MandateSpec     `yaml:"mandate"`
+	LegacyAnchor string          `yaml:"legacy_anchor"` // hex-encoded H(B_final) from v1
 }
 
 // ValidatorSpec defines a validator in the genesis configuration.
 type ValidatorSpec struct {
-	UID0PubKey   string `yaml:"uid0_pubkey"`    // hex-encoded Dilithium3 public key
-	VRFPubKey    string `yaml:"vrf_pubkey"`     // hex-encoded VRF public key
-	ContractHash string `yaml:"contract_hash"`  // hex-encoded contract hash (optional)
+	UID0PubKey   string `yaml:"uid0_pubkey"`   // hex-encoded Dilithium3 public key
+	VRFPubKey    string `yaml:"vrf_pubkey"`    // hex-encoded VRF public key
+	ContractHash string `yaml:"contract_hash"` // hex-encoded contract hash (optional)
 }
 
 // MandateSpec defines the genesis mandate configuration.
@@ -48,16 +48,16 @@ type MandateRuleSpec struct {
 
 // ConsensusConfig holds consensus parameters from the genesis mandate.
 type ConsensusConfig struct {
-	GraceCycles         uint64 `yaml:"GraceCycles"`
-	MinValidators       uint64 `yaml:"MinValidators"`
-	BaseIntervalMs      uint64 `yaml:"BaseIntervalMs"`
-	MaxCycleDurationMs  uint64 `yaml:"MaxCycleDurationMs"`
-	LambdaInterval      uint64 `yaml:"LambdaInterval"`
+	GraceCycles         uint64  `yaml:"GraceCycles"`
+	MinValidators       uint64  `yaml:"MinValidators"`
+	BaseIntervalMs      uint64  `yaml:"BaseIntervalMs"`
+	MaxCycleDurationMs  uint64  `yaml:"MaxCycleDurationMs"`
+	LambdaInterval      uint64  `yaml:"LambdaInterval"`
 	MinLambda1          float64 `yaml:"MinLambda1"`
-	KeyRotationLeadTime uint64 `yaml:"KeyRotationLeadTime"`
-	MinKeyOverlap       uint64 `yaml:"MinKeyOverlap"`
-	MaxPendingTTL       uint64 `yaml:"MaxPendingTTL"`
-	BatchVerifyWorkers  int    `yaml:"BatchVerifyWorkers"`
+	KeyRotationLeadTime uint64  `yaml:"KeyRotationLeadTime"`
+	MinKeyOverlap       uint64  `yaml:"MinKeyOverlap"`
+	MaxPendingTTL       uint64  `yaml:"MaxPendingTTL"`
+	BatchVerifyWorkers  int     `yaml:"BatchVerifyWorkers"`
 }
 
 func main() {
@@ -222,16 +222,16 @@ func (m *MandateSpec) GetMinValidators() uint64 {
 // ExtractConsensusConfig extracts consensus parameters from the mandate.
 func (s *GenesisSpec) ExtractConsensusConfig() (*ConsensusConfig, error) {
 	cfg := &ConsensusConfig{
-		GraceCycles:        10,
-		MinValidators:      4,
-		BaseIntervalMs:     3000,
-		MaxCycleDurationMs: 10000,
-		LambdaInterval:     10,
-		MinLambda1:         0.01,
+		GraceCycles:         10,
+		MinValidators:       4,
+		BaseIntervalMs:      3000,
+		MaxCycleDurationMs:  10000,
+		LambdaInterval:      10,
+		MinLambda1:          0.01,
 		KeyRotationLeadTime: 10,
-		MinKeyOverlap:      10,
-		MaxPendingTTL:      100,
-		BatchVerifyWorkers: 0, // auto
+		MinKeyOverlap:       10,
+		MaxPendingTTL:       100,
+		BatchVerifyWorkers:  0, // auto
 	}
 
 	for _, rule := range s.Mandate.Rules {
@@ -335,13 +335,13 @@ func BuildGenesisBlock(spec *GenesisSpec, consensusCfg *ConsensusConfig) (*chain
 	copy(proposerID[:], validators[0].Dilithium3PK[:16])
 
 	block := &chain.Block{
-		Index:       0,
-		PrevHash:    make([]byte, 32), // All zeros for genesis
-		StateRoot:   make([]byte, 32), // Will be set by engine on init
-		Proposer:    proposerID,
-		Anchored:    []chain.ProvenanceEntry{},
-		Lambda1:     0, // No network yet
-		Timestamp:   spec.CreatedAt * 1e9, // Convert to nanoseconds
+		Index:     0,
+		PrevHash:  make([]byte, 32), // All zeros for genesis
+		StateRoot: make([]byte, 32), // Will be set by engine on init
+		Proposer:  proposerID,
+		Anchored:  []chain.ProvenanceEntry{},
+		Lambda1:   0,                    // No network yet
+		Timestamp: spec.CreatedAt * 1e9, // Convert to nanoseconds
 		Quorum: chain.QuorumConfig{
 			TotalValidators: len(spec.Validators),
 			RequiredSigs:    quorumRequired(len(spec.Validators)),
@@ -351,11 +351,17 @@ func BuildGenesisBlock(spec *GenesisSpec, consensusCfg *ConsensusConfig) (*chain
 		ProtocolVersion: 2,
 	}
 
-	// Add legacy anchor if provided (for v1 migration)
+	// Add legacy anchor if provided (for v1 migration).
+	// block.cddl declares key 18 as `bytes .size 32`, so a well-formed hex string of
+	// any other length would produce a block no conformant verifier accepts. The
+	// continuity proof is only meaningful if it is a BLAKE3-256 digest.
 	if spec.LegacyAnchor != "" {
 		legacyBytes, err := hexDecode(spec.LegacyAnchor)
 		if err != nil {
 			return nil, fmt.Errorf("invalid legacy anchor: %w", err)
+		}
+		if len(legacyBytes) != 32 {
+			return nil, fmt.Errorf("invalid legacy anchor: got %d bytes, want 32 (H(B_final v1.0) is a BLAKE3-256 digest)", len(legacyBytes))
 		}
 		block.LegacyAnchor = legacyBytes
 	}
@@ -408,12 +414,12 @@ func hexDecode(s string) ([]byte, error) {
 
 // V1Snapshot represents the exported state from a v1.0 network.
 type V1Snapshot struct {
-	BlockHeight   uint64            `json:"block_height"`
-	LastBlockHash string            `json:"last_block_hash"`     // hex
-	SMRoot        string            `json:"smt_root"`            // hex
-	ValidatorSet  []V1Validator     `json:"validator_set"`
-	ActiveMandates []V1Mandate      `json:"active_mandates"`
-	NetworkState  V1NetworkState    `json:"network_state"`
+	BlockHeight    uint64         `json:"block_height"`
+	LastBlockHash  string         `json:"last_block_hash"` // hex
+	SMRoot         string         `json:"smt_root"`        // hex
+	ValidatorSet   []V1Validator  `json:"validator_set"`
+	ActiveMandates []V1Mandate    `json:"active_mandates"`
+	NetworkState   V1NetworkState `json:"network_state"`
 }
 
 // V1Validator represents a validator in v1.0 format.
@@ -425,38 +431,38 @@ type V1Validator struct {
 
 // V1Mandate represents a mandate in v1.0 format.
 type V1Mandate struct {
-	MandateID   string `json:"mandate_id"`   // hex
-	Authority   string `json:"authority"`    // hex
-	Version     uint64 `json:"version"`
-	PrevVersion string `json:"prev_version"` // hex
-	ValidFrom   int64  `json:"valid_from"`
-	ValidUntil  int64  `json:"valid_until"`
+	MandateID   string   `json:"mandate_id"` // hex
+	Authority   string   `json:"authority"`  // hex
+	Version     uint64   `json:"version"`
+	PrevVersion string   `json:"prev_version"` // hex
+	ValidFrom   int64    `json:"valid_from"`
+	ValidUntil  int64    `json:"valid_until"`
 	Rules       []V1Rule `json:"rules"`
 }
 
 // V1Rule represents a mandate rule in v1.0 format.
 type V1Rule struct {
-	EventClass           string   `json:"event_class"`
-	Description          string   `json:"description"`
-	SeverityMin          float64  `json:"severity_min"`
-	SeverityMax          float64  `json:"severity_max"`
-	AssetCriticalityMin  uint     `json:"asset_criticality_min"`
-	RegulatoryScope      []string `json:"regulatory_scope"`
-	Mandatory            bool     `json:"mandatory"`
-	RequiredFields       []string `json:"required_fields"`
-	MaxDeferralSec       uint64   `json:"max_deferral_sec"`
+	EventClass          string   `json:"event_class"`
+	Description         string   `json:"description"`
+	SeverityMin         float64  `json:"severity_min"`
+	SeverityMax         float64  `json:"severity_max"`
+	AssetCriticalityMin uint     `json:"asset_criticality_min"`
+	RegulatoryScope     []string `json:"regulatory_scope"`
+	Mandatory           bool     `json:"mandatory"`
+	RequiredFields      []string `json:"required_fields"`
+	MaxDeferralSec      uint64   `json:"max_deferral_sec"`
 }
 
 // V1NetworkState represents the network state in v1.0 format.
 type V1NetworkState struct {
-	Cycle          uint64                `json:"cycle"`
-	Lambda1        float64               `json:"lambda1"`
-	MinLambda1     float64               `json:"min_lambda1"`
-	LambdaInterval uint64                `json:"lambda_interval"`
-	DecayRate      float64               `json:"decay_rate"`
-	Eta            float64               `json:"eta"`
+	Cycle          uint64                 `json:"cycle"`
+	Lambda1        float64                `json:"lambda1"`
+	MinLambda1     float64                `json:"min_lambda1"`
+	LambdaInterval uint64                 `json:"lambda_interval"`
+	DecayRate      float64                `json:"decay_rate"`
+	Eta            float64                `json:"eta"`
 	Nodes          map[string]V1NodeState `json:"nodes"`
-	Edges          []V1Edge              `json:"edges"`
+	Edges          []V1Edge               `json:"edges"`
 }
 
 // V1NodeState represents a node state in v1.0 format.
@@ -501,11 +507,11 @@ func importV1Snapshot(path string) (*GenesisSpec, error) {
 
 	// Build genesis spec
 	spec := &GenesisSpec{
-		NetworkName:   "3cp-migrated-v2",
-		CreatedAt:     time.Now().Unix(),
-		Validators:    validators,
-		Mandate:       mandate,
-		LegacyAnchor:  snapshot.LastBlockHash,
+		NetworkName:  "3cp-migrated-v2",
+		CreatedAt:    time.Now().Unix(),
+		Validators:   validators,
+		Mandate:      mandate,
+		LegacyAnchor: snapshot.LastBlockHash,
 	}
 
 	return spec, nil
@@ -520,24 +526,24 @@ func convertMandates(v1Mandates []V1Mandate) MandateSpec {
 			{
 				EventClass: "3cp:consensus-config",
 				Fields: map[string]interface{}{
-					"GraceCycles":           10,
-					"MinValidators":         4,
-					"BaseIntervalMs":        3000,
-					"MaxCycleDurationMs":    10000,
-					"LambdaInterval":        10,
-					"MinLambda1":            0.01,
-					"KeyRotationLeadTime":   10,
-					"MinKeyOverlap":         10,
-					"MaxPendingTTL":         100,
-					"BatchVerifyWorkers":    0,
+					"GraceCycles":         10,
+					"MinValidators":       4,
+					"BaseIntervalMs":      3000,
+					"MaxCycleDurationMs":  10000,
+					"LambdaInterval":      10,
+					"MinLambda1":          0.01,
+					"KeyRotationLeadTime": 10,
+					"MinKeyOverlap":       10,
+					"MaxPendingTTL":       100,
+					"BatchVerifyWorkers":  0,
 				},
 			},
 			{
 				EventClass: "3cp:anchor-config",
 				Fields: map[string]interface{}{
-					"Mode":                "designated",
-					"MinRedundancy":       2,
-					"AllowedSchemes":      []string{"ipfs", "file"},
+					"Mode":           "designated",
+					"MinRedundancy":  2,
+					"AllowedSchemes": []string{"ipfs", "file"},
 				},
 			},
 			{
@@ -558,13 +564,13 @@ func convertMandates(v1Mandates []V1Mandate) MandateSpec {
 				mandate.Rules = append(mandate.Rules, MandateRuleSpec{
 					EventClass: rule.EventClass,
 					Fields: map[string]interface{}{
-						"SeverityMin":       rule.SeverityMin,
-						"SeverityMax":       rule.SeverityMax,
+						"SeverityMin":         rule.SeverityMin,
+						"SeverityMax":         rule.SeverityMax,
 						"AssetCriticalityMin": rule.AssetCriticalityMin,
-						"RegulatoryScope":   rule.RegulatoryScope,
-						"Mandatory":         rule.Mandatory,
-						"RequiredFields":    rule.RequiredFields,
-						"MaxDeferralSec":    rule.MaxDeferralSec,
+						"RegulatoryScope":     rule.RegulatoryScope,
+						"Mandatory":           rule.Mandatory,
+						"RequiredFields":      rule.RequiredFields,
+						"MaxDeferralSec":      rule.MaxDeferralSec,
 					},
 				})
 			}
