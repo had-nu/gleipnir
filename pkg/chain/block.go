@@ -102,6 +102,94 @@ func (q QuorumConfig) IsValid() bool {
 	return q.TotalValidators > 0 && q.RequiredSigs > 0 && q.RequiredSigs <= q.TotalValidators
 }
 
+// CloneBlock returns a deep copy of a block.
+//
+// A Block holds reference types (maps and slices), so a shallow copy shares mutable
+// state with the original. That matters wherever a block crosses an ownership
+// boundary — in particular the gossip bus, where one node publishes a block and
+// another verifies it: with a shallow copy the publisher's later in-place edits (the
+// degraded-mode label, trimming PrepareSigs) are visible to the verifier, so the block
+// being verified is not the block that was proposed.
+//
+// Callers that store or return a block must clone it rather than copying the struct.
+func CloneBlock(b *Block) *Block {
+	if b == nil {
+		return nil
+	}
+	cp := *b
+
+	if b.PrevHash != nil {
+		cp.PrevHash = append([]byte(nil), b.PrevHash...)
+	}
+	if b.StateRoot != nil {
+		cp.StateRoot = append([]byte(nil), b.StateRoot...)
+	}
+	if b.BlockHash != nil {
+		cp.BlockHash = append([]byte(nil), b.BlockHash...)
+	}
+	if b.PrepareSigsBitmap != nil {
+		cp.PrepareSigsBitmap = append([]byte(nil), b.PrepareSigsBitmap...)
+	}
+	if b.CommitSig != nil {
+		cp.CommitSig = append([]byte(nil), b.CommitSig...)
+	}
+	if b.LegacyAnchor != nil {
+		cp.LegacyAnchor = append([]byte(nil), b.LegacyAnchor...)
+	}
+	if b.ExternalAnchors != nil {
+		cp.ExternalAnchors = append([]string(nil), b.ExternalAnchors...)
+	}
+
+	if b.PrepareSigs != nil {
+		cp.PrepareSigs = make([][]byte, len(b.PrepareSigs))
+		for i, sig := range b.PrepareSigs {
+			cp.PrepareSigs[i] = append([]byte(nil), sig...)
+		}
+	}
+	if b.Anchored != nil {
+		cp.Anchored = make([]ProvenanceEntry, len(b.Anchored))
+		for i, e := range b.Anchored {
+			cp.Anchored[i] = CloneProvenanceEntry(&e)
+		}
+	}
+	if b.Validators != nil {
+		cp.Validators = make([]ValidatorInfo, len(b.Validators))
+		copy(cp.Validators, b.Validators)
+	}
+	if b.Metadata != nil {
+		cp.Metadata = make(map[string][]byte, len(b.Metadata))
+		for k, v := range b.Metadata {
+			cp.Metadata[k] = append([]byte(nil), v...)
+		}
+	}
+
+	return &cp
+}
+
+// CloneProvenanceEntry returns a deep copy of a provenance entry.
+func CloneProvenanceEntry(e *ProvenanceEntry) ProvenanceEntry {
+	if e == nil {
+		return ProvenanceEntry{}
+	}
+	cp := *e
+	if e.Approver != nil {
+		a := *e.Approver
+		cp.Approver = &a
+	}
+	if e.Reference != nil {
+		r := *e.Reference
+		cp.Reference = &r
+	}
+	if e.MandateRef != nil {
+		m := *e.MandateRef
+		cp.MandateRef = &m
+	}
+	if e.Signature != nil {
+		cp.Signature = append([]byte(nil), e.Signature...)
+	}
+	return cp
+}
+
 // ComputeBlockHash computes the SHA-256 hash of a block per 3CP spec §4.4.
 // BlockHash = SHA-256(LE64(Index) || PrevHash || StateRoot || Proposer || HashOfAnchoredEntries || LE64(Timestamp) || QuorumConfigCanonical)
 func ComputeBlockHash(b *Block) []byte {
