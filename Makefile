@@ -13,9 +13,10 @@ build:
 	go build -o $(BUILD_DIR)/cube-room ./frontend-test/cube-room
 
 proto:
-	protoc --go_out=. --go_opt=module=$(PROJECT) \
-		--go-grpc_out=. --go-grpc_opt=module=$(PROJECT) \
-		pkg/server/api.proto
+	cd pkg/server && protoc \
+		--go_out=pb --go_opt=paths=source_relative \
+		--go-grpc_out=pb --go-grpc_opt=paths=source_relative \
+		api.proto
 
 test:
 	go test ./pkg/... -v -count=1
@@ -48,8 +49,6 @@ pre-commit:
 
 clean:
 	rm -rf $(BUILD_DIR)/
-	rm -f pkg/server/api.pb.go
-	rm -f pkg/server/api_grpc.pb.go
 
 docker-up:
 	docker compose up -d --build
