@@ -22,38 +22,72 @@ type Server struct {
 	engine    *consensus.Engine
 	registry  *identity.Registry
 	startTime time.Time
+
+	// cycleInterval is the interval the engine was constructed with. Options run before the
+	// engine is built, so this is always the value in force.
+	cycleInterval time.Duration
 }
 
 type ServerOption func(*Server)
 
-func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOption) *Server {
-	node := consensus.Node{
-		UID:  *uid,
-		Addr: nodeID,
-	}
-	eng := consensus.NewEngine(node, 3*time.Second)
-	eng.Start()
+// defaultCycleInterval is the consensus cycle interval a node runs with unless
+// WithCycleInterval says otherwise. It is the dominant term in submit-to-anchor latency.
+const defaultCycleInterval = 3 * time.Second
 
+func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOption) *Server {
 	// Initialize identity registry with the node's identity
 	registry := identity.NewRegistry()
 	_ = registry.Register(uid.ID(), uid.PublicKey[:])
 
 	s := &Server{
-		nodeID:    nodeID,
-		identity:  uid,
-		engine:    eng,
-		registry:  registry,
-		startTime: time.Now(),
+		nodeID:        nodeID,
+		identity:      uid,
+		registry:      registry,
+		startTime:     time.Now(),
+		cycleInterval: defaultCycleInterval,
 	}
+
+	// Options run before the engine is built, because the cycle interval is a constructor
+	// argument to consensus.NewEngine and cannot be changed on a running engine. Options
+	// that need the engine must therefore be applied after this point.
 	for _, opt := range opts {
 		opt(s)
 	}
+
+	node := consensus.Node{
+		UID:  *uid,
+		Addr: nodeID,
+	}
+	s.engine = consensus.NewEngine(node, s.cycleInterval)
+	s.engine.Start()
+
 	return s
+}
+
+// CycleInterval reports the consensus cycle interval this server was configured with.
+func (s *Server) CycleInterval() time.Duration {
+	return s.cycleInterval
 }
 
 func WithKey(uid *identity.UIDZeroSoulbound) ServerOption {
 	return func(s *Server) {
 		_ = s.registry.Register(uid.ID(), uid.PublicKey[:])
+	}
+}
+
+// WithCycleInterval sets the consensus cycle interval, which is the dominant term in how
+// long a submission takes to become anchored.
+//
+// It is an option rather than a constructor argument because the interval is a deployment
+// decision: a pipeline that gates on anchoring wants a short one, and the submit-to-anchor
+// benchmarks in latency_bench_test.go need to measure it at each documented value. A
+// non-positive interval is ignored, so a misconfiguration leaves the default in place
+// rather than stopping the engine from cycling at all.
+func WithCycleInterval(d time.Duration) ServerOption {
+	return func(s *Server) {
+		if d > 0 {
+			s.cycleInterval = d
+		}
 	}
 }
 

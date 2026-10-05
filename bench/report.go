@@ -36,6 +36,10 @@ func main() {
 
 	packages := []string{
 		"./pkg/smt/...",
+		// Submit-to-anchor is the round trip issue #5 asked for. The percentiles live in
+		// the test of the same name; this contributes the mean for comparison with the
+		// SMT figures.
+		"./pkg/server/...",
 		"./pkg/identity/...",
 		"./pkg/consensus/...",
 	}
