@@ -1,5 +1,14 @@
 bin/
 *.cbor
+
+# Compiled binaries. These were committed at the repository's first commit and a plain
+# `go build ./...` silently overwrites them, which puts a multi-megabyte binary diff in
+# front of anyone reviewing a change. Build them with `make build` or into ./bin.
+genesis
+provectl
+conformance-test
+provenanced
+pipeline-sim
 *.key
 *.pem
 .env

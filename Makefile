@@ -9,6 +9,8 @@ all: proto build
 build:
 	go build -o $(BUILD_DIR)/provenanced ./cmd/provenanced
 	go build -o $(BUILD_DIR)/provectl ./cmd/provectl
+	go build -o $(BUILD_DIR)/genesis ./cmd/genesis
+	go build -o $(BUILD_DIR)/conformance-test ./cmd/conformance-test
 	go build -o $(BUILD_DIR)/pipeline-sim ./cmd/pipeline-sim
 	go build -o $(BUILD_DIR)/cube-room ./frontend-test/cube-room
 
