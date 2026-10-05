@@ -4,6 +4,12 @@
 **Date**: 2026-08-25  
 **Status**: Draft for spec v2.1 consideration
 
+> **Point-in-time record.** Written 2026-08-25 from the same analysis that produced the compliance report, and still a draft proposal rather than specification text. None of it is normative: the authoritative protocol is https://github.com/had-nu/3CP `spec/SPEC-3CP-V2.md`.
+>
+> Kept as the historical record of what was true then, unedited. Where an item below has
+> since been resolved, the resolution is noted rather than the item removed, so the analysis
+> stays auditable against what it was reacting to.
+
 ---
 
 ## Executive Summary
@@ -247,19 +253,19 @@ Types defined in `pkg/chain/block.go` but no RPC handlers.
 
 | # | Feature | Current Spec | Proposed Level | Implementation Status |
 |---|---------|--------------|----------------|----------------------|
-| 1 | Sliding-window rate limiter | Silent | MUST | ✅ Done |
-| 2 | Entry deduplication | Silent | MUST | ✅ Done |
-| 3 | SMT root verification | Implied | MUST | ✅ Done |
-| 4 | ValidatorSet in every block | Defined | MUST | ✅ Done |
-| 5 | Batch signature verification | Silent | SHOULD | ✅ Done |
-| 6 | Persistent state (atomic) | Out of scope | SHOULD | ✅ Done |
-| 7 | Degraded mode label + exit | Partial | MUST | ✅ Done |
-| 8 | Adaptive cycle EWMA params | Formula only | MUST | ✅ Done |
-| 9 | Incremental Laplacian caching | "MUST use rank-one" | SHOULD | ✅ Done |
-| 10 | Anchor Publisher redundancy | Backend list only | MUST | ✅ Done (FS + mock IPFS) |
-| 11 | Key rotation validation | 5 rules defined | MUST | ❌ Missing |
-| 12 | Mandate compliance verification | Structures only | MUST | ❌ Missing |
-| 13 | ZKBridge v1.0.0 | Interface only | MUST | ❌ Missing |
+| 1 | Sliding-window rate limiter | Silent | MUST | Done |
+| 2 | Entry deduplication | Silent | MUST | Done |
+| 3 | SMT root verification | Implied | MUST | Done |
+| 4 | ValidatorSet in every block | Defined | MUST | Done |
+| 5 | Batch signature verification | Silent | SHOULD | Done |
+| 6 | Persistent state (atomic) | Out of scope | SHOULD | Done |
+| 7 | Degraded mode label + exit | Partial | MUST | Done |
+| 8 | Adaptive cycle EWMA params | Formula only | MUST | Done |
+| 9 | Incremental Laplacian caching | "MUST use rank-one" | SHOULD | Done |
+| 10 | Anchor Publisher redundancy | Backend list only | MUST | Done (FS + mock IPFS) |
+| 11 | Key rotation validation | 5 rules defined | MUST | Missing |
+| 12 | Mandate compliance verification | Structures only | MUST | Missing |
+| 13 | ZKBridge v1.0.0 | Interface only | MUST | Missing |
 
 ---
 

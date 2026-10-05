@@ -2,6 +2,15 @@
 
 Immutable Provenance Chain (IPC) v1 reference implementation.
 
+> **This describes the v1 implementation and is kept for historical reference.** The
+> repository implements 3CP v2.0. Nothing here has been checked against the current tree,
+> and several things it describes no longer hold: the block layout was renumbered to match
+> `spec/schemas/block.cddl`, signing moved from round-3 Dilithium3 to FIPS 204 ML-DSA-65,
+> and key rotation (§8) and mandate compliance (§13) were added after this was written.
+>
+> For the current architecture see [ARCHITECTURE-v2.md](ARCHITECTURE-v2.md) for the
+> design and [ARCHITECTURE.md](ARCHITECTURE.md) for the overview.
+
 ## Table of Contents
 
 1. [Project map](#project-map)

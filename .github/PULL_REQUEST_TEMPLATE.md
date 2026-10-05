@@ -15,7 +15,7 @@ Closes #
 
 ## Checklist
 
-- [ ] I have read [CONTRIBUTING.md](../CONTRIBUTING.md)
+- [ ] I have read [CONTRIBUTING.md](CONTRIBUTING.md)
 - [ ] My commits are signed off (`git commit -s`)
 - [ ] My commits follow the commit message conventions
 - [ ] I have added or updated tests as needed
