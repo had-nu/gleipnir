@@ -1,9 +1,10 @@
 # Verification Checklist
 
-This file exists because [GLEIPNIR_REMEDIATION_SPEC_II](./docs/GLEIPNIR_REMEDIATION_SPEC_II.md)
-found that two of four "DONE" issues in a prior completion report were either
-fabricated or shipped with security-critical defects that passing unit tests
-did not catch. The checklist below is a mechanical gate — no issue is resolved
+This file exists because a prior remediation review found that two of four "DONE"
+issues in a completion report were either fabricated or shipped with
+security-critical defects that passing unit tests did not catch. The review that
+found them is not in this repository; the closest surviving artefact is
+[GLEIPNIR-SPEC-REM-001](docs/GLEIPNIR-SPEC-REM-001.md). The checklist below is a mechanical gate — no issue is resolved
 until every applicable line is confirmed against the actual repository.
 
 ---

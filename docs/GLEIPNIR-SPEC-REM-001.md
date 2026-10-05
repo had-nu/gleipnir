@@ -8,6 +8,12 @@
 **Escopo:** Remediação completa dos problemas identificados no commit `f9c74d9` (v2.0)  
 **Prioridade:** P0 → P1 → P2 (bloqueante → alto → médio)
 
+> **Point-in-time record.** Written 2026-07-29 against commit `f9c74d9`, and never marked resolved. Several items it raises were fixed while closing the 3CP v2.0 gaps in October 2026: the signature-size figure (2700 to 3309, FIPS 204 ML-DSA-65), the block CBOR key numbering, the static `build-passing` badge it flags at finding 11, and the never-verified mandate authority signature. Treat the priorities below as a snapshot, not a work list.
+>
+> Kept as the historical record of what was true then, unedited. Where an item below has
+> since been resolved, the resolution is noted rather than the item removed, so the analysis
+> stays auditable against what it was reacting to.
+
 ---
 
 ## 1. RESUMO EXECUTIVO

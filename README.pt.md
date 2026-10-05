@@ -7,9 +7,9 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="Licença">
-  <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build">
+  <img src="https://github.com/had-nu/gleipnir/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/status-active-2ea44f" alt="Estado">
 </p>
 
