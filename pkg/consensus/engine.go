@@ -47,6 +47,11 @@ type Engine struct {
 	degraded       *DegradedMode           // Degraded mode handler
 	pendingEntries []chain.ProvenanceEntry // Retained entries across cycle aborts
 
+	// lastPendingChange is when the pending set last grew, and settleWindow is how long
+	// it must then stay still before a cycle may compute alpha over it. See
+	// pendingSettledLocked.
+	lastPendingChange time.Time
+
 	// Incremental Laplacian for efficient λ₁ computation
 	laplacian *state.IncrementalLaplacian
 
@@ -358,6 +363,7 @@ func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
 	}
 
 	e.pending = append(e.pending, entry)
+	e.markPendingChangedLocked()
 	if e.gossip != nil {
 		e.gossip.Publish(entry)
 	}
@@ -535,6 +541,82 @@ func (e *Engine) updateCycleDuration() {
 	e.cycleTimeout = e.cycleDuration
 }
 
+// nextCycleLocked returns the cycle number this node is attempting, which is the
+// index of the block it expects to produce next.
+//
+// It is derived from the committed chain, not from a per-process counter, because
+// the cycle number is part of the VRF input (spec §6.2, `alpha_c = c ||
+// StateRoot_at_cycle_start`) and every validator must compute the same `alpha` or
+// they elect different leaders and the quorum can never form. Convergence here is
+// deterministic — there is no fork to reconcile later — so the only safe source for
+// `c` is the chain every node has already agreed on.
+//
+// `e.state.Cycle` is deliberately not used. It increments on every attempt,
+// including aborted cycles and skipped empty ones, so two nodes that started at
+// different times disagree about it permanently. Keeping the two values separate
+// matters for a second reason: `e.state.Cycle` is what key rotation compares
+// EffectiveCycle and ExpiryCycle against (spec §8.2), and changing its meaning
+// would silently redefine those windows. It stays an attempt counter.
+//
+// After a successful commit of index c, every node's chain is c+1 long, so the next
+// attempt is for c+1 everywhere. After an abort nothing is appended, so the next
+// attempt is for the same index, which is also what keeps `B.Index == c` and
+// `B.PrevHash == H(B_{c-1})` coherent for a block that was never produced.
+//
+// Spec note: §6.4 defines the post-abort input as `alpha_{c+1} = (c+1) || H(B_{c-1})`,
+// which uses the last committed block hash where §6.2 uses the state root. The two
+// disagree for the same cycle, and §6.4 additionally advances the cycle number past
+// an index that produced no block. §6.2 is the normative definition of alpha and is
+// what this implementation follows; the §6.4 divergence is recorded as a question for
+// the specification rather than silently resolved here.
+func (e *Engine) nextCycleLocked() uint64 {
+	return uint64(len(e.blocks))
+}
+
+func (e *Engine) markPendingChangedLocked() {
+	e.lastPendingChange = e.nowFunc()
+}
+
+// ingestGossipedEntriesLocked moves entries peers published into this node's retained
+// set, so an entry submitted anywhere becomes a candidate for the next block this node
+// proposes.
+//
+// Deduplicated against both sets already held, because the bus pool contains this
+// node's own entries as well as everyone else's, and because an entry that survived a
+// previous abort is in pendingEntries already. Comparison is on entry hash, which is
+// what RemoveEntries and the commit path use, so one identity of "same entry" holds
+// throughout.
+func (e *Engine) ingestGossipedEntriesLocked() {
+	if e.gossip == nil {
+		return
+	}
+	pool := e.gossip.Snapshot()
+	if len(pool) == 0 {
+		return
+	}
+
+	known := make(map[[32]byte]bool, len(e.pendingEntries)+len(e.pending))
+	for _, entry := range e.pendingEntries {
+		known[entry.Hash] = true
+	}
+	for _, entry := range e.pending {
+		known[entry.Hash] = true
+	}
+
+	added := 0
+	for _, entry := range pool {
+		if known[entry.Hash] {
+			continue
+		}
+		known[entry.Hash] = true
+		e.pendingEntries = append(e.pendingEntries, entry)
+		added++
+	}
+	if added > 0 {
+		e.markPendingChangedLocked()
+	}
+}
+
 func (e *Engine) RunCycle() {
 	defer func() {
 		if r := recover(); r != nil {
@@ -544,7 +626,29 @@ func (e *Engine) RunCycle() {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	cycle := e.state.Cycle
+	cycle := e.nextCycleLocked()
+
+	// Ingest anything peers have submitted.
+	//
+	// Without this the network has no submissions at all beyond each node's own:
+	// GossipChannel.Publish stores the entry in the bus and broadcasts it, and the bus
+	// is where a receiving node's copy lives -- but nothing ever drained that pool into
+	// the engine. Snapshot() had no caller in non-test code. A submission to a node that
+	// is not the leader therefore stayed on that node forever and was never anchored,
+	// while the leader proposed blocks containing only its own entries.
+	e.ingestGossipedEntriesLocked()
+
+	// Snapshot the state tree before anything can mutate it.
+	//
+	// RunPreparePhase inserts this cycle's entries into e.st in order to compute the
+	// block's StateRoot, and there was no way to undo that. Every failure path restored
+	// only pendingEntries, so a cycle that inserted and then failed to reach quorum left
+	// this node's state root advanced with no block behind it. Since the state root is
+	// the second component of the VRF input, that node's alpha then differed from every
+	// peer's permanently: every VRF proof it published was rejected, and the network
+	// deadlocked with no error anywhere. Observed directly -- a five-node topology
+	// logging "invalid proof from <peer>: VRF verification failed" on every cycle.
+	stateSnapshot := e.st.Clone()
 
 	// Keep the key rotation validator aligned with the current cycle and validator
 	// set before it is asked to judge anything (spec §8).
@@ -556,6 +660,7 @@ func (e *Engine) RunCycle() {
 	allPending = append(allPending, e.pending...)
 
 	if len(allPending) == 0 && e.cfg.SkipEmptyCycles {
+		e.st = stateSnapshot
 		e.state.Cycle++
 		return
 	}
@@ -590,6 +695,7 @@ func (e *Engine) RunCycle() {
 		log.Printf("IPC cycle %d: PREPARE failed: %v", cycle, prepareResult.Err)
 		// Cycle aborted - retain entries for next cycle
 		e.pendingEntries = allPending
+		e.st = stateSnapshot
 		e.state.Cycle++
 		return
 	}
@@ -599,6 +705,7 @@ func (e *Engine) RunCycle() {
 	if prepareResult.Err != nil {
 		log.Printf("IPC cycle %d: QUORUM CHECK failed: %v", cycle, prepareResult.Err)
 		e.pendingEntries = allPending
+		e.st = stateSnapshot
 		e.state.Cycle++
 		return
 	}
@@ -608,6 +715,7 @@ func (e *Engine) RunCycle() {
 	if commitResult.Err != nil {
 		log.Printf("IPC cycle %d: COMMIT failed: %v", cycle, commitResult.Err)
 		e.pendingEntries = allPending
+		e.st = stateSnapshot
 		e.state.Cycle++
 		return
 	}
@@ -622,6 +730,7 @@ func (e *Engine) RunCycle() {
 		if err := e.degraded.ApplyDegradedBlock(finalBlock, e.peers, e.node.UID.ID()); err != nil {
 			log.Printf("IPC cycle %d: degraded mode error: %v", cycle, err)
 			e.pendingEntries = allPending
+			e.st = stateSnapshot
 			e.state.Cycle++
 			return
 		}
@@ -632,6 +741,7 @@ func (e *Engine) RunCycle() {
 			cycle, err, e.state.Lambda1, e.cfg.MinLambda1)
 		// Cycle failed - retain entries for next cycle
 		e.pendingEntries = allPending
+		e.st = stateSnapshot
 		e.state.Cycle++
 		return
 	}
@@ -797,7 +907,8 @@ func (e *Engine) Submit(ctx context.Context, hash [32]byte, submitter [16]byte, 
 		Timestamp: time.Now().UnixNano(),
 		Label:     label,
 	})
-	estimatedBlock := uint64(len(e.blocks))
+	e.markPendingChangedLocked()
+	estimatedBlock := e.nextCycleLocked()
 	return &chain.Ticket{
 		Hash:       hash,
 		Status:     "pending",

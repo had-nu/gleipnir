@@ -173,6 +173,35 @@ func (t *SparseMerkleTree) splitAndInsert(key1 []byte, h1 [hashLen]byte, key2 []
 	}
 }
 
+// Clone returns a deep copy of the tree.
+//
+// Needed because the consensus engine mutates the tree while building a candidate
+// block and must be able to undo that if the cycle fails. Without it, a cycle that
+// inserts entries and then fails to reach quorum leaves the tree mutated: the state
+// root advances on that node alone, and since the state root is part of the VRF input
+// (spec §6.2, `alpha_c = c || StateRoot_at_cycle_start`), that node's alpha can never
+// match a peer's again. The network deadlocks with no error, because every node is
+// individually computing its leader correctly for its own root.
+//
+// The copy is deep: nodes are pointers, so a shallow struct copy would share them and
+// the "snapshot" would change underneath the caller.
+func (t *SparseMerkleTree) Clone() *SparseMerkleTree {
+	c := &SparseMerkleTree{
+		root:   t.root,
+		depth:  t.depth,
+		store:  make(map[[hashLen]byte]*node, len(t.store)),
+		zeroes: make([][hashLen]byte, len(t.zeroes)),
+	}
+	copy(c.zeroes, t.zeroes)
+	for k, v := range t.store {
+		n := *v
+		n.Key = append([]byte(nil), v.Key...)
+		n.Value = append([]byte(nil), v.Value...)
+		c.store[k] = &n
+	}
+	return c
+}
+
 func (t *SparseMerkleTree) Root() [hashLen]byte {
 	return t.root
 }
