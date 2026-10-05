@@ -131,12 +131,28 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		// v2.0: Fixed quorum formula Q = ceil(2N/3)
 		quorumCfg = chain.QuorumConfig{TotalValidators: len(peers), RequiredSigs: (2*len(peers) + 2) / 3}
 	}
+	// The cycle interval the caller asked for becomes BaseInterval.
+	//
+	// updateCycleDuration derives the cycle from BaseInterval on every cycle
+	// (BaseInterval + EWMA(RTT) * SafetyFactor, SPEC 10.1), so setting BaseInterval is
+	// what makes the argument mean anything. Previously BaseInterval was always the
+	// package default and the cycleInterval argument affected nothing but a log line:
+	// cycleLoop ticks on cycleDuration, so every node ran at 3s regardless of the interval
+	// it was constructed with.
+	cfg := state.DefaultConfig
+	cfg.BaseInterval = cycleInterval
+	if cycleInterval > 0 && cycleInterval < cfg.MaxCycleDuration {
+		// Keep the hard cap above the base, or updateCycleDuration would clamp every
+		// computed duration back up to the cap and ignore the base entirely.
+		cfg.MaxCycleDuration = cycleInterval * 4
+	}
+
 	eng := &Engine{
 		node:           node,
 		peers:          peers,
 		gossip:         gossip,
 		state:          state.NetworkState{Cycle: 0, Nodes: make(map[string]state.NodeState), Graph: state.ReputationGraph{}},
-		cfg:            state.DefaultConfig,
+		cfg:            cfg,
 		st:             smt.New(state.DefaultConfig.SMTDepth),
 		blocks:         make([]chain.Block, 0),
 		pending:        make([]chain.ProvenanceEntry, 0),
@@ -150,8 +166,14 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		cycleTimeout:   10 * time.Second, // Default 10s cycle timeout
 		pendingEntries: make([]chain.ProvenanceEntry, 0),
 		laplacian:      state.DefaultIncrementalLaplacian(),
-		// Adaptive cycle: start with BaseInterval
-		cycleDuration: state.DefaultConfig.BaseInterval,
+		// Adaptive cycle: start at the configured interval.
+		//
+		// This used to be state.DefaultConfig.BaseInterval, which meant the cycleInterval
+		// argument to NewEngine affected nothing but a log line. cycleLoop ticks on
+		// cycleDuration, and updateCycleDuration derives it from BaseInterval, so the
+		// caller's value was silently discarded and every node ran at the default no
+		// matter what interval it was constructed with.
+		cycleDuration: cycleInterval,
 		// Degraded mode handler
 		degraded: NewDegradedMode(state.DefaultConfig.MinValidators, state.DefaultConfig.GraceCycles),
 	}
@@ -431,6 +453,17 @@ func (e *Engine) GetBlock(index uint64) *chain.Block {
 		return nil
 	}
 	return &e.blocks[index]
+}
+
+// CycleDuration returns the interval the cycle loop is currently ticking at.
+//
+// This is the real period, which is not necessarily the value passed to NewEngine:
+// updateCycleDuration raises it to BaseInterval + EWMA(RTT) * SafetyFactor on every cycle.
+// Anything reasoning about anchor latency needs this rather than the constructor argument.
+func (e *Engine) CycleDuration() time.Duration {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.cycleDuration
 }
 
 func (e *Engine) BlockCount() uint64 {
