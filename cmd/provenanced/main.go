@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/had-nu/gleipnir/pkg/identity"
 	"github.com/had-nu/gleipnir/pkg/rest"
@@ -91,7 +93,19 @@ func main() {
 	go func() {
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
-		if err := http.ListenAndServe(":"+*metricsPort, mux); err != nil {
+
+		// Explicit server rather than http.ListenAndServe, which sets no timeouts at all.
+		// Without them a client that opens a connection and dribbles headers holds a
+		// goroutine indefinitely, so a handful of slow connections exhausts the process.
+		metricsSrv := &http.Server{
+			Addr:              ":" + *metricsPort,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       10 * time.Second,
+			WriteTimeout:      30 * time.Second,
+			IdleTimeout:       60 * time.Second,
+		}
+		if err := metricsSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Printf("metrics server: %v", err)
 		}
 	}()

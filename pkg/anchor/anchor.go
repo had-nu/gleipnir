@@ -26,24 +26,24 @@ var (
 type PublisherMode string
 
 const (
-	ModeAll         PublisherMode = "all"         // Publish to all configured backends
-	ModeDesignated  PublisherMode = "designated"  // Publish to designated publishers only
-	ModeExternal    PublisherMode = "external"    // External publisher (not managed by this node)
+	ModeAll        PublisherMode = "all"        // Publish to all configured backends
+	ModeDesignated PublisherMode = "designated" // Publish to designated publishers only
+	ModeExternal   PublisherMode = "external"   // External publisher (not managed by this node)
 )
 
 // AnchorPublisherConfig defines the configuration for anchor publishing.
 type AnchorPublisherConfig struct {
-	Mode                PublisherMode  `yaml:"mode" json:"mode"`
+	Mode                 PublisherMode `yaml:"mode" json:"mode"`
 	DesignatedPublishers []string      `yaml:"designated_publishers" json:"designated_publishers"` // Peer IDs
-	MinRedundancy       int            `yaml:"min_redundancy" json:"min_redundancy"`              // Minimum backends to succeed
+	MinRedundancy        int           `yaml:"min_redundancy" json:"min_redundancy"`               // Minimum backends to succeed
 
 	// Filesystem backend
 	FilesystemPath string `yaml:"filesystem_path" json:"filesystem_path"`
 
 	// IPFS backend
-	IPFSEnabled    bool   `yaml:"ipfs_enabled" json:"ipfs_enabled"`
-	IPFSGateway    string `yaml:"ipfs_gateway" json:"ipfs_gateway"`       // e.g., "/ip4/127.0.0.1/tcp/5001"
-	IPFSHashFunc   string `yaml:"ipfs_hash_func" json:"ipfs_hash_func"`   // "blake3-256" or "sha2-256"
+	IPFSEnabled  bool   `yaml:"ipfs_enabled" json:"ipfs_enabled"`
+	IPFSGateway  string `yaml:"ipfs_gateway" json:"ipfs_gateway"`     // e.g., "/ip4/127.0.0.1/tcp/5001"
+	IPFSHashFunc string `yaml:"ipfs_hash_func" json:"ipfs_hash_func"` // "blake3-256" or "sha2-256"
 
 	// S3 backend (future)
 	S3Enabled bool `yaml:"s3_enabled" json:"s3_enabled"`
@@ -68,10 +68,10 @@ type BlockPublisher interface {
 
 // AnchorPublisher manages multiple block publishers.
 type AnchorPublisher struct {
-	mu        sync.RWMutex
-	config    AnchorPublisherConfig
+	mu         sync.RWMutex
+	config     AnchorPublisherConfig
 	publishers []BlockPublisher
-	closed    bool
+	closed     bool
 }
 
 // NewAnchorPublisher creates a new anchor publisher with the given configuration.
@@ -191,7 +191,10 @@ func NewFilesystemPublisher(basePath string) (*FilesystemPublisher, error) {
 		return nil, fmt.Errorf("failed to resolve anchor path: %w", err)
 	}
 	// Ensure directory exists
-	if err := os.MkdirAll(absPath, 0755); err != nil {
+	// #nosec G301 -- 0755 is deliberate. This directory holds published blocks, and
+	// SPEC 12.1 requires them in publicly readable storage so third parties can verify
+	// without operator access. The content is public chain data, not secrets.
+	if err := os.MkdirAll(absPath, 0755); err != nil { //nolint:gosec
 		return nil, fmt.Errorf("failed to create anchor directory: %w", err)
 	}
 	return &FilesystemPublisher{basePath: absPath}, nil
@@ -214,7 +217,9 @@ func (fp *FilesystemPublisher) Publish(ctx context.Context, block *chain.Block) 
 
 	// Write atomically using temp file + rename
 	tmpPath := path + ".tmp"
-	if err := os.WriteFile(tmpPath, data, 0644); err != nil {
+	// #nosec G306 -- 0644 is deliberate, for the same reason as the directory above: a
+	// published block is public chain data that verifiers must be able to read.
+	if err := os.WriteFile(tmpPath, data, 0644); err != nil { //nolint:gosec
 		return nil, fmt.Errorf("failed to write block file: %w", err)
 	}
 	if err := os.Rename(tmpPath, path); err != nil {

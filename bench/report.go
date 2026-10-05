@@ -23,8 +23,8 @@ type BenchResult struct {
 }
 
 type Report struct {
-	Generated time.Time    `json:"generated"`
-	System    string       `json:"system"`
+	Generated time.Time     `json:"generated"`
+	System    string        `json:"system"`
 	Results   []BenchResult `json:"results"`
 }
 
@@ -44,7 +44,9 @@ func main() {
 
 	for _, pkg := range packages {
 		fmt.Fprintf(os.Stderr, "Benchmarking %s ...\n", pkg)
-		cmd := exec.Command("go", "test", pkg, "-bench=.", "-benchmem", "-count=1", "-timeout=180s")
+		// #nosec G204 -- pkg comes from the packages list declared above, not from input,
+		// and exec.Command passes arguments directly rather than through a shell.
+		cmd := exec.Command("go", "test", pkg, "-bench=.", "-benchmem", "-count=1", "-timeout=180s") //nolint:gosec
 		cmd.Dir = findModRoot()
 		out, err := cmd.Output()
 		if err != nil {
@@ -71,7 +73,8 @@ func main() {
 	}
 
 	jsonBytes, _ := json.MarshalIndent(report, "", "  ")
-	if err := os.WriteFile("bench/report.json", jsonBytes, 0644); err != nil {
+	// #nosec G306 -- benchmark results are public output, not secrets.
+	if err := os.WriteFile("bench/report.json", jsonBytes, 0644); err != nil { //nolint:gosec
 		log.Printf("bench: write report: %v", err)
 	}
 

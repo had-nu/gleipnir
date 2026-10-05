@@ -84,15 +84,41 @@ func TestSelectProposerChangesWithState(t *testing.T) {
 	}
 }
 
+// TestSelectTriad asserts what SelectTriad actually promises.
+//
+// The previous version of this test checked len(triad) == 3 and that each member had a
+// non-empty UID slice. Triad is [3][16]byte, so both are constants that can never fail:
+// the test passed whatever SelectTriad returned, including nonsense. staticcheck flagged
+// the assignment as never meaningfully used, which is the same observation.
 func TestSelectTriad(t *testing.T) {
-	peers := []Peer{testPeer("a"), testPeer("b"), testPeer("c")}
+	peers := []Peer{testPeer("a"), testPeer("b"), testPeer("c"), testPeer("d")}
 
-	triad := SelectTriad(peers, 0, 3)
-	if len(triad) != 3 {
-		t.Fatalf("triad should have 3 members, got %d", len(triad))
+	// The triad is the proposer followed by the next two peers, wrapping.
+	for proposerIdx := range peers {
+		triad := SelectTriad(peers, proposerIdx, len(peers))
+		want := Triad{
+			peers[proposerIdx].UID.RootID,
+			peers[(proposerIdx+1)%len(peers)].UID.RootID,
+			peers[(proposerIdx+2)%len(peers)].UID.RootID,
+		}
+		if triad != want {
+			t.Errorf("proposer %d: got triad of %x, want %x", proposerIdx, triad, want)
+		}
 	}
-	if len(triad[0]) == 0 || len(triad[1]) == 0 || len(triad[2]) == 0 {
-		t.Fatal("triad members should have non-empty UID slices")
+
+	// Selection must be deterministic, or two nodes could disagree about the triad. The
+	// two results are held in variables first: comparing two identical call expressions
+	// would be a tautology.
+	first := SelectTriad(peers, 1, len(peers))
+	second := SelectTriad(peers, 1, len(peers))
+	if first != second {
+		t.Errorf("SelectTriad is not deterministic: %x then %x", first, second)
+	}
+
+	// A different proposer must yield a different triad; otherwise the proposer index is
+	// not actually being honoured.
+	if SelectTriad(peers, 0, len(peers)) == SelectTriad(peers, 1, len(peers)) {
+		t.Error("changing the proposer index did not change the triad")
 	}
 }
 
@@ -161,7 +187,7 @@ func TestVerifyQuorum(t *testing.T) {
 	// (The caller must supply the block's own recorded Validators field, not an attacker-chosen set.)
 	pkEvil, skEvil, _ := identity.GenerateDilithiumKey(rand.Reader)
 	evilSig := identity.SignDilithium(skEvil, msg)
-	evilPks := [][]byte{pkEvil}       // attacker supplies their own "validator set"
+	evilPks := [][]byte{pkEvil} // attacker supplies their own "validator set"
 	err = VerifyQuorum(msg, [][]byte{evilSig}, evilPks,
 		chain.QuorumConfig{TotalValidators: 1, RequiredSigs: 1})
 	if err != nil {
@@ -230,8 +256,8 @@ func addDisconnectedPeer(eng *Engine) {
 
 func TestCycleAdvancesOnFragmentation(t *testing.T) {
 	eng := newTestEngine()
-	addDisconnectedPeer(eng)     // 2 nodes, no edges between them → λ₁ = 0
-	eng.cfg.MinLambda1 = 0.5     // 0 < 0.5 → always fragmented
+	addDisconnectedPeer(eng) // 2 nodes, no edges between them → λ₁ = 0
+	eng.cfg.MinLambda1 = 0.5 // 0 < 0.5 → always fragmented
 	addPending(eng)
 
 	prevCycle := eng.state.Cycle
@@ -257,10 +283,10 @@ func TestCycleAdvancesOnFragmentation(t *testing.T) {
 
 func TestRunCycleAlwaysAdvancesCycle(t *testing.T) {
 	tests := []struct {
-		name       string
-		setup      func(eng *Engine)
-		wantBlock  bool
-		desc       string
+		name      string
+		setup     func(eng *Engine)
+		wantBlock bool
+		desc      string
 	}{
 		{
 			name: "no pending entries",
@@ -335,9 +361,9 @@ func TestRunCycleAlwaysAdvancesCycle(t *testing.T) {
 
 			if tt.wantBlock && len(eng.blocks) > 0 {
 				last := eng.blocks[len(eng.blocks)-1]
-if !bytes.Equal(last.Proposer[:], eng.node.UID.RootID[:]) {
-				t.Errorf("block proposer mismatch: %s", tt.desc)
-			}
+				if !bytes.Equal(last.Proposer[:], eng.node.UID.RootID[:]) {
+					t.Errorf("block proposer mismatch: %s", tt.desc)
+				}
 			}
 		})
 	}

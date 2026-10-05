@@ -120,8 +120,11 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 	if peers == nil {
 		peers = []Peer{{UID: node.UID, Addr: node.Addr, Alive: true}}
 	}
-	// Default quorum: single-node = 1/1, multi-node = ceil(2N/3)
-	quorumCfg := chain.DefaultQuorumConfig()
+	// Default quorum: single-node = 1/1, multi-node = ceil(2N/3).
+	// Declared rather than initialised to DefaultQuorumConfig: both branches assign, so an
+	// initial value here would be discarded and could mislead a reader into thinking a
+	// 3/3 default applies when neither branch is taken.
+	var quorumCfg chain.QuorumConfig
 	if len(peers) == 1 {
 		quorumCfg = chain.QuorumConfig{TotalValidators: 1, RequiredSigs: 1}
 	} else {
@@ -628,9 +631,17 @@ func (e *Engine) RunCycle() {
 			proofBytes = append(proofBytes, p[:]...)
 		}
 		stateRootArr := e.st.Root()
+		// len(e.blocks) is at least one here, since a block was just appended, but the
+		// conversion is guarded rather than assumed: len-1 underflows to MaxUint64 on an
+		// empty slice, and a proof claiming to be from block 18446744073709551615 would be
+		// silently unusable rather than obviously wrong.
+		blockIndex := uint64(0)
+		if n := len(e.blocks); n > 0 {
+			blockIndex = uint64(n - 1)
+		}
 		e.anchored[h] = &chain.AnchorProof{
 			Found:      true,
-			BlockIndex: uint64(len(e.blocks) - 1),
+			BlockIndex: blockIndex,
 			BlockTime:  finalBlock.Timestamp,
 			StateRoot:  stateRootArr[:],
 			SMTProof:   proofBytes,
