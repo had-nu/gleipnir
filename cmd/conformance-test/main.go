@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/had-nu/gleipnir/pkg/identity"
-	"github.com/had-nu/gleipnir/pkg/smt"
 	pb "github.com/had-nu/gleipnir/pkg/server/pb"
+	"github.com/had-nu/gleipnir/pkg/smt"
 	"github.com/had-nu/gleipnir/pkg/validation"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -508,8 +508,19 @@ func tc10GetBlock(ctx context.Context, raw pb.ProvenanceAnchorClient) {
 
 	detail := fmt.Sprintf("index=%d entries=%d proposer=%s",
 		resp.Index, len(resp.Anchored), hex.EncodeToString(resp.Proposer[:8]))
-	if len(resp.Anchored) > 0 {
-		detail += fmt.Sprintf(" sigs=%d", len(resp.Sigs))
+	// prepare_sigs, not the v1 `sigs`: §5.3 reserves key 8 for ProtocolVersion == 2 and
+	// forbids signatures there, so this is the only PREPARE-signature field.
+	detail += fmt.Sprintf(" prepare_sigs=%d validators=%d", len(resp.PrepareSigs), len(resp.Validators))
+	if len(resp.CommitSig) > 0 {
+		detail += fmt.Sprintf(" commit_sig=%dB", len(resp.CommitSig))
+	}
+	// The server returns the block's stored hash rather than a recomputed one, so its
+	// presence and length are what a client can check here; agreement with the contents is
+	// the client's own job.
+	if len(resp.BlockHash) == 32 {
+		detail += " block_hash=32B"
+	} else {
+		detail += fmt.Sprintf(" block_hash=%dB(unexpected)", len(resp.BlockHash))
 	}
 	pass("TC10", "-", "GetBlock(0)", latency, detail)
 }

@@ -29,6 +29,8 @@ const (
 	ProvenanceAnchor_GetHealth_FullMethodName           = "/provenance.ProvenanceAnchor/GetHealth"
 	ProvenanceAnchor_GetBlock_FullMethodName            = "/provenance.ProvenanceAnchor/GetBlock"
 	ProvenanceAnchor_StreamBlocks_FullMethodName        = "/provenance.ProvenanceAnchor/StreamBlocks"
+	ProvenanceAnchor_GetValidatorSet_FullMethodName     = "/provenance.ProvenanceAnchor/GetValidatorSet"
+	ProvenanceAnchor_GetMerkleProof_FullMethodName      = "/provenance.ProvenanceAnchor/GetMerkleProof"
 	ProvenanceAnchor_SubmitKeyRotation_FullMethodName   = "/provenance.ProvenanceAnchor/SubmitKeyRotation"
 	ProvenanceAnchor_GetActivePublicKey_FullMethodName  = "/provenance.ProvenanceAnchor/GetActivePublicKey"
 	ProvenanceAnchor_SubmitMandate_FullMethodName       = "/provenance.ProvenanceAnchor/SubmitMandate"
@@ -48,6 +50,11 @@ type ProvenanceAnchorClient interface {
 	GetHealth(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*HealthResponse, error)
 	GetBlock(ctx context.Context, in *BlockRequest, opts ...grpc.CallOption) (*Block, error)
 	StreamBlocks(ctx context.Context, in *BlockRange, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Block], error)
+	// GetValidatorSet and GetMerkleProof are the remaining SPEC §12.2 read operations a
+	// light client needs: the validator set to check signatures against, and proofs that an
+	// entry is in the tree a given block committed to.
+	GetValidatorSet(ctx context.Context, in *ValidatorSetRequest, opts ...grpc.CallOption) (*ValidatorSetResponse, error)
+	GetMerkleProof(ctx context.Context, in *MerkleProofRequest, opts ...grpc.CallOption) (*MerkleProofResponse, error)
 	// SubmitKeyRotation rotates this node's validator signing key (SPEC §8).
 	SubmitKeyRotation(ctx context.Context, in *KeyRotationRequest, opts ...grpc.CallOption) (*KeyRotationResponse, error)
 	// GetActivePublicKey reports which validator keys are authoritative in a cycle,
@@ -151,6 +158,26 @@ func (c *provenanceAnchorClient) StreamBlocks(ctx context.Context, in *BlockRang
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ProvenanceAnchor_StreamBlocksClient = grpc.ServerStreamingClient[Block]
 
+func (c *provenanceAnchorClient) GetValidatorSet(ctx context.Context, in *ValidatorSetRequest, opts ...grpc.CallOption) (*ValidatorSetResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ValidatorSetResponse)
+	err := c.cc.Invoke(ctx, ProvenanceAnchor_GetValidatorSet_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *provenanceAnchorClient) GetMerkleProof(ctx context.Context, in *MerkleProofRequest, opts ...grpc.CallOption) (*MerkleProofResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MerkleProofResponse)
+	err := c.cc.Invoke(ctx, ProvenanceAnchor_GetMerkleProof_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *provenanceAnchorClient) SubmitKeyRotation(ctx context.Context, in *KeyRotationRequest, opts ...grpc.CallOption) (*KeyRotationResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(KeyRotationResponse)
@@ -222,6 +249,11 @@ type ProvenanceAnchorServer interface {
 	GetHealth(context.Context, *Empty) (*HealthResponse, error)
 	GetBlock(context.Context, *BlockRequest) (*Block, error)
 	StreamBlocks(*BlockRange, grpc.ServerStreamingServer[Block]) error
+	// GetValidatorSet and GetMerkleProof are the remaining SPEC §12.2 read operations a
+	// light client needs: the validator set to check signatures against, and proofs that an
+	// entry is in the tree a given block committed to.
+	GetValidatorSet(context.Context, *ValidatorSetRequest) (*ValidatorSetResponse, error)
+	GetMerkleProof(context.Context, *MerkleProofRequest) (*MerkleProofResponse, error)
 	// SubmitKeyRotation rotates this node's validator signing key (SPEC §8).
 	SubmitKeyRotation(context.Context, *KeyRotationRequest) (*KeyRotationResponse, error)
 	// GetActivePublicKey reports which validator keys are authoritative in a cycle,
@@ -266,6 +298,12 @@ func (UnimplementedProvenanceAnchorServer) GetBlock(context.Context, *BlockReque
 }
 func (UnimplementedProvenanceAnchorServer) StreamBlocks(*BlockRange, grpc.ServerStreamingServer[Block]) error {
 	return status.Error(codes.Unimplemented, "method StreamBlocks not implemented")
+}
+func (UnimplementedProvenanceAnchorServer) GetValidatorSet(context.Context, *ValidatorSetRequest) (*ValidatorSetResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetValidatorSet not implemented")
+}
+func (UnimplementedProvenanceAnchorServer) GetMerkleProof(context.Context, *MerkleProofRequest) (*MerkleProofResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMerkleProof not implemented")
 }
 func (UnimplementedProvenanceAnchorServer) SubmitKeyRotation(context.Context, *KeyRotationRequest) (*KeyRotationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SubmitKeyRotation not implemented")
@@ -425,6 +463,42 @@ func _ProvenanceAnchor_StreamBlocks_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type ProvenanceAnchor_StreamBlocksServer = grpc.ServerStreamingServer[Block]
 
+func _ProvenanceAnchor_GetValidatorSet_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ValidatorSetRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvenanceAnchorServer).GetValidatorSet(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvenanceAnchor_GetValidatorSet_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvenanceAnchorServer).GetValidatorSet(ctx, req.(*ValidatorSetRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProvenanceAnchor_GetMerkleProof_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MerkleProofRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProvenanceAnchorServer).GetMerkleProof(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProvenanceAnchor_GetMerkleProof_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProvenanceAnchorServer).GetMerkleProof(ctx, req.(*MerkleProofRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _ProvenanceAnchor_SubmitKeyRotation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(KeyRotationRequest)
 	if err := dec(in); err != nil {
@@ -563,6 +637,14 @@ var ProvenanceAnchor_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetBlock",
 			Handler:    _ProvenanceAnchor_GetBlock_Handler,
+		},
+		{
+			MethodName: "GetValidatorSet",
+			Handler:    _ProvenanceAnchor_GetValidatorSet_Handler,
+		},
+		{
+			MethodName: "GetMerkleProof",
+			Handler:    _ProvenanceAnchor_GetMerkleProof_Handler,
 		},
 		{
 			MethodName: "SubmitKeyRotation",

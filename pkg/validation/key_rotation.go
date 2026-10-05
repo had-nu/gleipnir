@@ -15,6 +15,7 @@
 package validation
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"sync"
@@ -223,6 +224,26 @@ func authorisingCycle(entry *chain.KeyRotationEntry) uint64 {
 		return 0
 	}
 	return entry.EffectiveCycle - 1
+}
+
+// ValidatorIDs returns the identifiers in the validator set, ordered.
+//
+// A light client needs this to ask which key is authoritative for each validator in a
+// cycle. Exposing the set's membership rather than its keys is deliberate: the client
+// holds the validator set as its own trust anchor and must not be handed key material it
+// is supposed to be checking against.
+func (v *KeyRotationValidator) ValidatorIDs() [][16]byte {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+
+	out := make([][16]byte, 0, len(v.validators))
+	for id := range v.validators {
+		out = append(out, id)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		return bytes.Compare(out[i][:], out[j][:]) < 0
+	})
+	return out
 }
 
 // GetActivePublicKey returns the Dilithium3 public keys that are authoritative for a
