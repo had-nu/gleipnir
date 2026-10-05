@@ -28,7 +28,10 @@ func newTestServer(t *testing.T) (*Server, pb.ProvenanceAnchorClient, func()) {
 	if err != nil {
 		t.Fatalf("NewUIDZero error: %v", err)
 	}
-	srv := NewServer("test-node", uid)
+	srv, err := NewServer("test-node", uid, WithAllowSimulatedIdentities(true))
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 
 	lis := bufconn.Listen(1024 * 1024)
 	gs := grpc.NewServer()

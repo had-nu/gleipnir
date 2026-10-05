@@ -70,7 +70,10 @@ func measureSubmitToAnchor(
 	t.Helper()
 
 	uid := newLatencyUID(t, nodeID)
-	srv := NewServer(nodeID, uid, WithCycleInterval(cycleInterval))
+	srv, err := NewServer(nodeID, uid, WithCycleInterval(cycleInterval), WithAllowSimulatedIdentities(true))
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
 
 	lis := newBufListener()
 	cleanup := serveForTest(srv, lis)
@@ -202,7 +205,10 @@ func TestSubmitAnchorLatencyScalesWithCycleInterval(t *testing.T) {
 func BenchmarkSubmitToAnchor(b *testing.B) {
 	uid := newLatencyUIDB(b, "bench-submit-anchor")
 
-	srv := NewServer("bench-submit-anchor", uid, WithCycleInterval(100*time.Millisecond))
+	srv, err := NewServer("bench-submit-anchor", uid, WithCycleInterval(100*time.Millisecond), WithAllowSimulatedIdentities(true))
+	if err != nil {
+		b.Fatalf("NewServer: %v", err)
+	}
 	lis := newBufListener()
 	cleanup := serveForTest(srv, lis)
 	defer cleanup()

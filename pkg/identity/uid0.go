@@ -7,11 +7,22 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 )
 
 var (
 	ErrInvalidEntropy   = errors.New("entropy source must be at least 32 bytes")
 	ErrInvalidNetworkID = errors.New("networkID must be 32 bytes")
+
+	// ErrSimulatedIdentity is returned when an identity marked Simulated reaches a
+	// production code path.
+	ErrSimulatedIdentity = errors.New("simulated identities are not permitted outside tests")
+
+	// ErrKeyDerivation is returned when a derived keypair cannot be generated. It
+	// replaces the previous behaviour of silently returning an all-zero public key
+	// and an all-zero secret key: an identity signing with a zero seed is a
+	// publicly forgeable identity, so this must never be a zero-value fallback.
+	ErrKeyDerivation = errors.New("uid0: key derivation failed")
 )
 
 // UIDZeroSoulbound represents a soulbound identity in the 3CP v2.0 protocol.
@@ -59,19 +70,15 @@ func NewUIDZero(entropySource string, networkID [32]byte, simulated bool, contra
 		copy(contractHash[:], contractHashBytes)
 	}
 
-	var dilithiumPK [1952]byte
-	var dilithiumSK []byte
-	var vrfPK [32]byte
-	var vrfSK []byte
-
-	if simulated {
-		// Deterministic test keys for reproducible tests
-		dilithiumPK, dilithiumSK = generateDilithiumDeterministic(dilithiumSeed)
-		vrfPK, vrfSK = generateVRFDeterministic(vrfSeed)
-	} else {
-		// Production: use CSPRNG with derived seed as additional entropy
-		dilithiumPK, dilithiumSK = generateDilithiumKey(dilithiumSeed)
-		vrfPK, vrfSK = generateVRFKey(vrfSeed)
+	// Both branches derive from the HKDF output; `simulated` only relaxes the
+	// entropy-source length check above. Key derivation itself must fail loudly.
+	dilithiumPK, dilithiumSK, err := generateDilithiumKey(dilithiumSeed)
+	if err != nil {
+		return nil, fmt.Errorf("%w: dilithium3: %v", ErrKeyDerivation, err)
+	}
+	vrfPK, vrfSK, err := generateVRFKey(vrfSeed)
+	if err != nil {
+		return nil, fmt.Errorf("%w: vrf: %v", ErrKeyDerivation, err)
 	}
 
 	uid := &UIDZeroSoulbound{
@@ -84,7 +91,7 @@ func NewUIDZero(entropySource string, networkID [32]byte, simulated bool, contra
 		Simulated:    simulated,
 	}
 
-	// Calculate and set FinalDigest (CBOR canonical without FinalDigest)
+	// Calculate and set FinalDigest (CBOR canonical over the public fields)
 	digest, err := uid.CalculateFinalDigest()
 	if err != nil {
 		return nil, err
@@ -92,6 +99,25 @@ func NewUIDZero(entropySource string, networkID [32]byte, simulated bool, contra
 	uid.FinalDigest = digest
 
 	return uid, nil
+}
+
+// RequireProduction reports whether this identity may be granted authority — used
+// as a signing identity on the network, or admitted to a validator set.
+//
+// A simulated identity skips the 32-byte minimum on its entropy source, so its keys
+// are derived from a short, often predictable string. It is a legitimate artefact for
+// tests and for `provectl init` genesis fixtures, which is why NewUIDZero still
+// builds one, but it must never be accepted as a network identity. Simulated is part
+// of the digest that FinalDigest commits to, so the flag is detectable by anyone
+// holding the public identity; this method is where the network acts on it.
+func (u *UIDZeroSoulbound) RequireProduction() error {
+	if u == nil {
+		return ErrInvalidEntropy
+	}
+	if u.Simulated {
+		return fmt.Errorf("%w: rootid=%s", ErrSimulatedIdentity, u.ID())
+	}
+	return nil
 }
 
 // ID returns the RootID as hex string (used as map key).
@@ -158,55 +184,34 @@ func hkdfExpand(prk, info []byte, length int) []byte {
 	return okm[:length]
 }
 
-// generateDilithiumDeterministic generates a deterministic Dilithium3 keypair for testing.
-func generateDilithiumDeterministic(seed []byte) ([1952]byte, []byte) {
+// generateDilithiumKey derives a Dilithium3 keypair from seed.
+//
+// The error is propagated rather than swallowed. The previous version returned a
+// zeroed public key and a zeroed secret key on failure, which produced an identity
+// that signed with a publicly known seed while reporting success to its caller.
+func generateDilithiumKey(seed []byte) ([1952]byte, []byte, error) {
 	pk, sk, err := GenerateDilithiumKeyFromSeed(seed)
 	if err != nil {
-		// Fallback for tests
-		return [1952]byte{}, make([]byte, Dilithium3SecretKeySize)
+		return [1952]byte{}, nil, err
 	}
-	return pk, sk
+	return pk, sk, nil
 }
 
-// generateDilithiumKey generates a production Dilithium3 keypair using seed as entropy.
-func generateDilithiumKey(seed []byte) ([1952]byte, []byte) {
-	pk, sk, err := GenerateDilithiumKeyFromSeed(seed)
-	if err != nil {
-		return [1952]byte{}, make([]byte, Dilithium3SecretKeySize)
-	}
-	return pk, sk
-}
-
-// generateVRFDeterministic generates a deterministic VRF keypair for testing.
-func generateVRFDeterministic(seed []byte) ([32]byte, []byte) {
+// generateVRFKey derives a VRF keypair from seed. As with generateDilithiumKey, a
+// derivation failure is an error, not a zeroed key.
+func generateVRFKey(seed []byte) ([32]byte, []byte, error) {
 	if len(seed) != 32 {
-		return [32]byte{}, make([]byte, 32)
+		return [32]byte{}, nil, fmt.Errorf("vrf seed must be 32 bytes, got %d", len(seed))
 	}
 	var seedArr [32]byte
 	copy(seedArr[:], seed)
 	sk, pk, err := GenerateVRFKeyFromSeed(seedArr)
 	if err != nil {
-		return [32]byte{}, make([]byte, 32)
+		return [32]byte{}, nil, err
 	}
 	var pkArr [32]byte
 	copy(pkArr[:], pk.Bytes())
-	return pkArr, sk.Bytes()
-}
-
-// generateVRFKey generates a production VRF keypair using seed as entropy.
-func generateVRFKey(seed []byte) ([32]byte, []byte) {
-	if len(seed) != 32 {
-		return [32]byte{}, make([]byte, 32)
-	}
-	var seedArr [32]byte
-	copy(seedArr[:], seed)
-	sk, pk, err := GenerateVRFKeyFromSeed(seedArr)
-	if err != nil {
-		return [32]byte{}, make([]byte, 32)
-	}
-	var pkArr [32]byte
-	copy(pkArr[:], pk.Bytes())
-	return pkArr, sk.Bytes()
+	return pkArr, sk.Bytes(), nil
 }
 
 // EncodeUID encodes a UID0 public key (Dilithium3) to a hex string for use as map keys.

@@ -2,6 +2,7 @@ package smt
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
 
 	"lukechampine.com/blake3"
@@ -52,11 +53,30 @@ func parentHash(left, right [hashLen]byte) [hashLen]byte {
 	return sum
 }
 
+// leafHash hashes a (key, value) pair into a leaf.
+//
+// The two lengths are written explicitly before the fields. Without them the
+// concatenation is ambiguous: leafHash([]byte("ab"), []byte("c")) and
+// leafHash([]byte("a"), []byte("bc")) hash the same 68 bytes to the same digest,
+// so a second preimage differing only in where the key ends is trivial to
+// construct. Both fields are variable-length here (BulkInsert takes
+// map[string][]byte), so this is reachable rather than theoretical.
+//
+// Lengths are big-endian fixed-width, which makes the encoding injective and
+// self-delimiting.
 func leafHash(key, value []byte) [hashLen]byte {
 	h := blake3.New(32, nil)
 	_, _ = h.Write([]byte("leaf"))
+
+	var lenBuf [8]byte
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(key)))
+	_, _ = h.Write(lenBuf[:])
 	_, _ = h.Write(key)
+
+	binary.BigEndian.PutUint64(lenBuf[:], uint64(len(value)))
+	_, _ = h.Write(lenBuf[:])
 	_, _ = h.Write(value)
+
 	var sum [hashLen]byte
 	copy(sum[:], h.Sum(nil))
 	return sum
@@ -184,6 +204,13 @@ func (t *SparseMerkleTree) Get(key []byte) ([]byte, error) {
 	return nil, ErrNotFound
 }
 
+// Prove returns an authentication path for key.
+//
+// Reaching a leaf is not sufficient: the leaf found must be the leaf for key.
+// The previous version returned the sibling path as soon as any leaf was
+// encountered, so Prove reported success for an absent key. Verify then failed
+// (it recomputes leafHash(key, value), which differs), but a caller checking only
+// the error from Prove would treat a non-membership query as a successful proof.
 func (t *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
 	var proof [][hashLen]byte
 	current := t.root
@@ -195,6 +222,9 @@ func (t *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
 			return nil, ErrNotFound
 		}
 		if n.Leaf {
+			if !bytes.Equal(n.Key, key) {
+				return nil, ErrNotFound
+			}
 			return proof, nil
 		}
 
@@ -209,13 +239,25 @@ func (t *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
 		depth--
 	}
 
-	if n, exists := t.store[current]; exists && n.Leaf {
-		return proof, nil
+	n, exists := t.store[current]
+	if !exists || !n.Leaf || !bytes.Equal(n.Key, key) {
+		return nil, ErrNotFound
 	}
-	return nil, ErrNotFound
+	return proof, nil
 }
 
+// Verify recomputes the root from a leaf and its authentication path.
+//
+// A path longer than the tree is rejected outright. Previously baseDepth went
+// negative, path() returned 0 for every such depth, and the surplus siblings were
+// folded in as if they were all left-hand siblings — which produced a root that
+// could be matched by a caller supplying extra path elements, rather than
+// detecting that the path does not belong to the tree.
 func (t *SparseMerkleTree) Verify(key []byte, value []byte, root [hashLen]byte, proof [][hashLen]byte) bool {
+	if len(proof) > t.depth {
+		return false
+	}
+
 	lh := leafHash(key, value)
 	current := lh
 
@@ -241,5 +283,3 @@ func (t *SparseMerkleTree) BulkInsert(entries map[string][]byte) error {
 	}
 	return nil
 }
-
-

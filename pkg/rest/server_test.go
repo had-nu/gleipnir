@@ -37,6 +37,9 @@ func newTestEngine(t *testing.T, uid *identity.UIDZeroSoulbound) *consensus.Engi
 
 func newTestServer(t *testing.T, eng *consensus.Engine, uid *identity.UIDZeroSoulbound, opts ...ServerOption) *Server {
 	t.Helper()
+	// Test identities are simulated by construction, so the production-identity
+	// check has to be lifted explicitly here.
+	opts = append(opts, WithAllowSimulatedIdentities(true))
 	s, err := NewServer(eng, uid, opts...)
 	if err != nil {
 		t.Fatalf("NewServer: %v", err)

@@ -23,6 +23,10 @@ type Server struct {
 	registry  *identity.Registry
 	startTime time.Time
 
+	// allowSimulated disables the production-identity check in NewServer. Set only by
+	// WithAllowSimulatedIdentities, and only for tests and local genesis fixtures.
+	allowSimulated bool
+
 	// cycleInterval is the interval the engine was constructed with. Options run before the
 	// engine is built, so this is always the value in force.
 	cycleInterval time.Duration
@@ -34,25 +38,39 @@ type ServerOption func(*Server)
 // WithCycleInterval says otherwise. It is the dominant term in submit-to-anchor latency.
 const defaultCycleInterval = 3 * time.Second
 
-func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOption) *Server {
-	// Initialize identity registry with the node's identity
-	registry := identity.NewRegistry()
-	_ = registry.Register(uid.ID(), uid.PublicKey[:])
-
+// NewServer builds the consensus server around the node's identity.
+//
+// The node identity is validated unless WithAllowSimulatedIdentities is set. This
+// node co-signs blocks and contributes VRF proofs, so a simulated identity here —
+// derived from a short, predictable entropy source — would put a forgeable signing
+// key in a position where the network accepts its output. The identity is registered
+// below only after that check passes.
+func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOption) (*Server, error) {
 	s := &Server{
-		nodeID:        nodeID,
-		identity:      uid,
-		registry:      registry,
-		startTime:     time.Now(),
-		cycleInterval: defaultCycleInterval,
+		nodeID:         nodeID,
+		identity:       uid,
+		allowSimulated: false,
+		startTime:      time.Now(),
+		cycleInterval:  defaultCycleInterval,
 	}
 
-	// Options run before the engine is built, because the cycle interval is a constructor
-	// argument to consensus.NewEngine and cannot be changed on a running engine. Options
-	// that need the engine must therefore be applied after this point.
+	// Options run before the engine is built, because the cycle interval is a
+	// constructor argument to consensus.NewEngine and cannot be changed on a running
+	// engine. Options that need the engine must therefore be applied after this point.
 	for _, opt := range opts {
 		opt(s)
 	}
+
+	if !s.allowSimulated {
+		if err := uid.RequireProduction(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Initialize identity registry with the node's identity
+	registry := identity.NewRegistry()
+	_ = registry.Register(uid.ID(), uid.PublicKey[:])
+	s.registry = registry
 
 	node := consensus.Node{
 		UID:  *uid,
@@ -61,7 +79,15 @@ func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOpti
 	s.engine = consensus.NewEngine(node, s.cycleInterval)
 	s.engine.Start()
 
-	return s
+	return s, nil
+}
+
+// WithAllowSimulatedIdentities permits a simulated (test-derived) node identity.
+// See NewServer for why the default is to reject one.
+func WithAllowSimulatedIdentities(allow bool) ServerOption {
+	return func(s *Server) {
+		s.allowSimulated = allow
+	}
 }
 
 // CycleInterval reports the consensus cycle interval this server was configured with.

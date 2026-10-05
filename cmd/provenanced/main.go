@@ -44,6 +44,9 @@ func main() {
 	restKeysDir := flag.String("rest-keys-dir", envFlag("", "IPC_REST_KEYS_DIR", ""), "Directory with UID0 key files for REST auth")
 	restAllowedRoots := flag.String("rest-allowed-roots", envFlag("", "IPC_REST_ALLOWED_ROOTS", ""), "Comma-separated whitelist of RootIDs")
 	restRateLimit := flag.Int("rest-rate-limit", 5000, "Max requests per minute per RootID")
+	allowSimulated := flag.Bool("allow-simulated-identities", envFlag("", "IPC_ALLOW_SIMULATED_IDENTITIES", "") == "true",
+		"Accept a simulated (test-derived) identity. Required for provectl genesis fixtures; "+
+			"a simulated identity is derived from a predictable entropy source and its key is forgeable")
 	_ = peers
 	flag.Parse()
 
@@ -66,7 +69,10 @@ func main() {
 
 	log.Printf("IPC node %s loaded uID0: id=%s", *nodeID, uid.ID())
 
-	srv := server.NewServer(*nodeID, uid)
+	srv, err := server.NewServer(*nodeID, uid, server.WithAllowSimulatedIdentities(*allowSimulated))
+	if err != nil {
+		log.Fatalf("server: %v", err)
+	}
 	defer srv.Stop()
 
 	restSrv, err := rest.NewServer(
@@ -75,6 +81,7 @@ func main() {
 		rest.WithKeysDir(*restKeysDir),
 		rest.WithAllowedRoots(*restAllowedRoots),
 		rest.WithRateLimit(*restRateLimit),
+		rest.WithAllowSimulatedIdentities(*allowSimulated),
 	)
 	if err != nil {
 		log.Fatalf("rest: %v", err)

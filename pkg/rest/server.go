@@ -43,14 +43,19 @@ const (
 )
 
 type Server struct {
-	engine       *consensus.Engine
-	nodeUID      *identity.UIDZeroSoulbound
-	keys         map[string]*identity.UIDZeroSoulbound
-	allowedRoots map[string]bool
-	rateLimiter  *perRootLimiter
-	httpServer   *http.Server
-	startTime    time.Time
-	mu           sync.RWMutex
+	engine         *consensus.Engine
+	nodeUID        *identity.UIDZeroSoulbound
+	keys           map[string]*identity.UIDZeroSoulbound
+	allowedRoots   map[string]bool
+	allowSimulated bool
+
+	// keysDir is recorded by WithKeysDir and read by loadKeysDir after all options
+	// have been applied.
+	keysDir     string
+	rateLimiter *perRootLimiter
+	httpServer  *http.Server
+	startTime   time.Time
+	mu          sync.RWMutex
 }
 
 type perRootLimiter struct {
@@ -85,12 +90,23 @@ func apiOK(data interface{}) apiResponse {
 	return apiResponse{Status: "ok", Data: data}
 }
 
+// NewServer builds the REST API surface.
+//
+// A simulated node identity is rejected by default. A simulated UID0 is derived
+// from a short, predictable entropy source, so its Dilithium3 key is forgeable by
+// anyone who guesses that source — and this server authorises requests purely on
+// signature checks against identities in s.keys. Accepting one here would hand an
+// attacker a signing identity. Callers that genuinely run test identities (the
+// package's own tests, `provectl` genesis fixtures) opt in explicitly with
+// WithAllowSimulatedIdentities, so the unsafe configuration is visible at the call
+// site rather than silently in effect.
 func NewServer(engine *consensus.Engine, nodeUID *identity.UIDZeroSoulbound, opts ...ServerOption) (*Server, error) {
 	s := &Server{
-		engine:       engine,
-		nodeUID:      nodeUID,
-		keys:         make(map[string]*identity.UIDZeroSoulbound),
-		allowedRoots: make(map[string]bool),
+		engine:         engine,
+		nodeUID:        nodeUID,
+		keys:           make(map[string]*identity.UIDZeroSoulbound),
+		allowedRoots:   make(map[string]bool),
+		allowSimulated: false,
 		rateLimiter: &perRootLimiter{
 			windows:   make(map[string]*slidingWindow),
 			maxReq:    5000,
@@ -103,7 +119,19 @@ func NewServer(engine *consensus.Engine, nodeUID *identity.UIDZeroSoulbound, opt
 			return nil, err
 		}
 	}
+	if !s.allowSimulated {
+		if err := nodeUID.RequireProduction(); err != nil {
+			return nil, err
+		}
+	}
 	s.keys[nodeUID.ID()] = nodeUID
+
+	// Loaded here, not inside WithKeysDir, so that WithAllowSimulatedIdentities is
+	// already in effect regardless of the order options were passed.
+	if err := s.loadKeysDir(); err != nil {
+		return nil, err
+	}
+
 	if len(s.allowedRoots) > 0 {
 		log.Printf("rest: whitelist enabled (%d roots)", len(s.allowedRoots))
 	}
@@ -112,55 +140,94 @@ func NewServer(engine *consensus.Engine, nodeUID *identity.UIDZeroSoulbound, opt
 
 type ServerOption func(*Server) error
 
+// WithAllowSimulatedIdentities permits simulated (test-derived) identities to
+// authorise requests. Intended for the package's own tests and for local genesis
+// fixtures; it disables the forgeability check described on NewServer, so it must
+// not be set in a deployment that faces untrusted clients.
+func WithAllowSimulatedIdentities(allow bool) ServerOption {
+	return func(s *Server) error {
+		s.allowSimulated = allow
+		return nil
+	}
+}
+
+// WithKeysDir records a directory of UID0 files to admit for request authorisation.
+//
+// The directory is read by loadKeysDir after every option has been applied, not
+// here. Reading it inline would make the result depend on option ordering:
+// WithAllowSimulatedIdentities sets a flag that the loader consults, so
+// WithKeysDir(dir), WithAllowSimulatedIdentities(true) would load under the
+// default and WithAllowSimulatedIdentities(true), WithKeysDir(dir) would not.
 func WithKeysDir(path string) ServerOption {
 	return func(s *Server) error {
-		if path == "" {
-			return nil
-		}
-		root, err := os.OpenRoot(path)
-		if err != nil {
-			return fmt.Errorf("open keys dir: %w", err)
-		}
-		defer func() { _ = root.Close() }()
-
-		entries, err := os.ReadDir(path)
-		if err != nil {
-			return fmt.Errorf("read keys dir: %w", err)
-		}
-		for _, e := range entries {
-			if e.IsDir() {
-				continue
-			}
-			// Only regular files are loaded. This directory holds identity material, so a
-			// symlink planted in it would otherwise be followed and whatever it pointed at
-			// read as though the operator had put it there.
-			if e.Type()&os.ModeSymlink != 0 {
-				log.Printf("rest: skip %s (symlink)", filepath.Join(path, e.Name()))
-				continue
-			}
-			if !e.Type().IsRegular() {
-				log.Printf("rest: skip %s (not a regular file)", filepath.Join(path, e.Name()))
-				continue
-			}
-			// Read through the root rather than by joining the path, so the open cannot
-			// escape the directory even if the entry name were to change between the read
-			// of the directory and the read of the file.
-			p := filepath.Join(path, e.Name())
-			data, err := root.ReadFile(e.Name())
-			if err != nil {
-				log.Printf("rest: skip %s: %v", p, err)
-				continue
-			}
-			uid, err := identity.UnmarshalCBOR(data)
-			if err != nil {
-				log.Printf("rest: skip %s (not a valid UID): %v", p, err)
-				continue
-			}
-			s.keys[uid.ID()] = uid
-			log.Printf("rest: loaded UID %s from %s", uid.ID(), p)
+		if path != "" {
+			s.keysDir = path
 		}
 		return nil
 	}
+}
+
+// loadKeysDir admits every valid, non-simulated UID0 file in the configured
+// directory. A bad file is skipped rather than fatal so one malformed entry does
+// not take down the whole key set.
+func (s *Server) loadKeysDir() error {
+	path := s.keysDir
+	if path == "" {
+		return nil
+	}
+	root, err := os.OpenRoot(path)
+	if err != nil {
+		return fmt.Errorf("open keys dir: %w", err)
+	}
+	defer func() { _ = root.Close() }()
+
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return fmt.Errorf("read keys dir: %w", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		// Only regular files are loaded. This directory holds identity material, so a
+		// symlink planted in it would otherwise be followed and whatever it pointed at
+		// read as though the operator had put it there.
+		if e.Type()&os.ModeSymlink != 0 {
+			log.Printf("rest: skip %s (symlink)", filepath.Join(path, e.Name()))
+			continue
+		}
+		if !e.Type().IsRegular() {
+			log.Printf("rest: skip %s (not a regular file)", filepath.Join(path, e.Name()))
+			continue
+		}
+		// Read through the root rather than by joining the path, so the open cannot
+		// escape the directory even if the entry name were to change between the read
+		// of the directory and the read of the file.
+		p := filepath.Join(path, e.Name())
+		data, err := root.ReadFile(e.Name())
+		if err != nil {
+			log.Printf("rest: skip %s: %v", p, err)
+			continue
+		}
+		uid, err := identity.UnmarshalCBOR(data)
+		if err != nil {
+			log.Printf("rest: skip %s (not a valid UID): %v", p, err)
+			continue
+		}
+		// Same reasoning as the node identity: a simulated UID in the keys directory
+		// would be accepted for request authorisation on the strength of a forgeable
+		// key. Skipped rather than fatal, so one bad file does not take the whole key
+		// set down.
+		if !s.allowSimulated {
+			if err := uid.RequireProduction(); err != nil {
+				log.Printf("rest: skip %s: %v", p, err)
+				continue
+			}
+		}
+		s.keys[uid.ID()] = uid
+		log.Printf("rest: loaded UID %s from %s", uid.ID(), p)
+	}
+	return nil
 }
 
 func WithAllowedRoots(roots string) ServerOption {
