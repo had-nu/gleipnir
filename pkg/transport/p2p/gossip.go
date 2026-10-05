@@ -373,7 +373,21 @@ func (b *GossipBus) broadcastSig(sig consensus.BlockSig) {
 	}
 }
 
+// maxStreamMessage bounds a length-prefixed stream message.
+//
+// The prefix is a uint32. Without a check, a payload larger than 4 GiB would have its
+// length truncated on the wire, so the peer would read a short frame and treat the
+// remainder as the next frame's header. Rejecting here keeps the framing self-consistent
+// for any peer that speaks it.
+const maxStreamMessage = 4 * 1024 * 1024
+
 func (b *GossipBus) sendStream(pid peer.ID, proto protocol.ID, data []byte) {
+	if len(data) > maxStreamMessage {
+		log.Printf("refusing to send %d bytes to %s: over the %d byte stream limit",
+			len(data), pid, maxStreamMessage)
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(b.ctx, requestTimeout)
 	defer cancel()
 
@@ -385,6 +399,8 @@ func (b *GossipBus) sendStream(pid peer.ID, proto protocol.ID, data []byte) {
 	defer func() { _ = s.Close() }()
 
 	var lenBuf [4]byte
+	// #nosec G115 -- len(data) cannot exceed maxStreamMessage, checked at the top of
+	// this function, so this conversion cannot truncate.
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
 	if _, err := s.Write(lenBuf[:]); err != nil {
 		return

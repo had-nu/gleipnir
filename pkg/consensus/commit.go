@@ -31,23 +31,25 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 
 	// Leader constructs B_final
 	if amLeader {
-		// Build PrepareSigsPayload: concatenate signatures in bitmap order
-		payload := make([]byte, 0)
-		for i, p := range e.peers {
-			if prepareResult.PrepareBitmap[i/8]&(1<<(i%8)) != 0 {
-				if sig, ok := prepareResult.PrepareSigs[p.UID.ID()]; ok {
-					payload = append(payload, sig...)
-				}
-			}
-		}
-
 		// Create final block with v2.0 fields
 		finalBlock := *block // Copy candidate block
 		finalBlock.PrepareSigsBitmap = prepareResult.PrepareBitmap
 
-		// Convert PrepareSigs map to slice in bitmap order
-		prepareSigsSlice := make([][]byte, 0)
+		// Convert the PREPARE signature map to the payload form, in bitmap order.
+		//
+		// SPEC §5.3: the payload is compacted to the signers, in ascending validator
+		// order, so entry i of the payload belongs to the i-th set bit rather than to
+		// validator i. The bitmap says who signed; this slice carries their signatures.
+		//
+		// An earlier revision also built a concatenated byte payload here and discarded
+		// it, which is the same traversal in a different shape. A light client verifying
+		// this chain has to pair the two fields exactly this way, so the loop below is the
+		// only one that matters.
+		prepareSigsSlice := make([][]byte, 0, len(prepareResult.PrepareSigs))
 		for i, p := range e.peers {
+			if i/8 >= len(prepareResult.PrepareBitmap) {
+				break
+			}
 			if prepareResult.PrepareBitmap[i/8]&(1<<(i%8)) != 0 {
 				if sig, ok := prepareResult.PrepareSigs[p.UID.ID()]; ok {
 					prepareSigsSlice = append(prepareSigsSlice, sig)
@@ -90,7 +92,7 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 
 	// Verify PREPARE quorum in B_final
 	if !verifyPrepareQuorum(finalProposal, e.peers, cycle, e) {
-		return &CommitResult{Err: fmt.Errorf("B_final PREPARE quorum verification failed")}
+		return &CommitResult{Err: fmt.Errorf("PREPARE quorum verification failed in B_final")}
 	}
 
 	// Verify leader's COMMIT signature (overlap-aware, spec §8)
@@ -114,7 +116,7 @@ func (e *Engine) RunCommitPhase(cycle uint64, prepareResult *PrepareResult) *Com
 	// Verify block hash matches
 	expectedHash := chain.ComputeBlockHash(finalProposal)
 	if string(expectedHash) != string(finalProposal.BlockHash) {
-		return &CommitResult{Err: fmt.Errorf("B_final block hash mismatch")}
+		return &CommitResult{Err: fmt.Errorf("block hash mismatch in B_final")}
 	}
 
 	log.Printf("IPC cycle %d: B_final verified, committing", cycle)

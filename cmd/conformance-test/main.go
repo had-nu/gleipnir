@@ -222,7 +222,8 @@ func randomHash() []byte {
 
 func signPayload(uid *identity.UIDZeroSoulbound, hash []byte, submitter [16]byte, ts int64, label string) []byte {
 	tsLE := make([]byte, 8)
-	binary.LittleEndian.PutUint64(tsLE, uint64(ts))
+	// #nosec G115 -- bit reinterpretation of a signed timestamp for LE encoding.
+	binary.LittleEndian.PutUint64(tsLE, uint64(ts)) //nolint:gosec
 	signed := make([]byte, 0, len(hash)+len(submitter)+len(tsLE)+len(label))
 	signed = append(signed, hash...)
 	signed = append(signed, submitter[:]...)

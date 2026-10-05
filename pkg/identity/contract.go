@@ -13,25 +13,6 @@ func ContractHash(doc []byte) [32]byte {
 	return Blake3Hash(doc)
 }
 
-// DRBG seeded from a fixed seed. Implements io.Reader so it can drive
-// GenerateDilithiumKey deterministically for contract-derived identities.
-type seedReader struct {
-	buf []byte
-	pos int
-}
-
-func (r *seedReader) Read(p []byte) (int, error) {
-	for i := range p {
-		if r.pos >= len(r.buf) {
-			r.buf = Hash(r.buf)[:]
-			r.pos = 0
-		}
-		p[i] = r.buf[r.pos]
-		r.pos++
-	}
-	return len(p), nil
-}
-
 // NewUIDZeroFromContract derives a UID0 v2.0 deterministically from a company
 // contract hash. The same (contractHash, nodeSalt) pair always produces the
 // same identity — including the Dilithium3 keypair — so a contract member can

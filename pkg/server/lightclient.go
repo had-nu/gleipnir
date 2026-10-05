@@ -3,6 +3,7 @@ package server
 
 import (
 	"context"
+	"math"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -143,4 +144,18 @@ func nonNegativeUint64(n int) uint64 {
 		return 0
 	}
 	return uint64(n)
+}
+
+// nonNegativeUint32 converts a count to the protobuf field's width without wrapping.
+//
+// The health counters are ints. A negative value would otherwise become close to 2^32 or
+// 2^64 on the wire, so a dashboard reading "4 billion peers" instead of "0".
+func nonNegativeUint32(n int) uint32 {
+	if n < 0 {
+		return 0
+	}
+	if n > math.MaxUint32 {
+		return math.MaxUint32
+	}
+	return uint32(n)
 }
