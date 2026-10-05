@@ -17,6 +17,16 @@ service ProvenanceAnchor {
   // GetActivePublicKey reports which validator keys are authoritative in a cycle,
   // which is two during a rotation's overlap window (SPEC §8).
   rpc GetActivePublicKey(ActiveKeyRequest) returns (ActiveKeyResponse);
+
+  // Mandate compliance (SPEC §13).
+  //
+  // A mandate states what MUST be anchored, so an auditor can later compare the chain
+  // against the obligation. SubmitMandate installs one; CheckCompliance asks whether
+  // the chain so far has honoured it over a window.
+  rpc SubmitMandate(MandateRequest) returns (MandateResponse);
+  rpc CheckCompliance(ComplianceCheckRequest) returns (ComplianceReport);
+  rpc GetActiveMandates(GetActiveMandatesRequest) returns (GetActiveMandatesResponse);
+  rpc GetMandate(GetMandateRequest) returns (GetMandateResponse);
 }
 
 // KeyRotationRequest asks the node to rotate its own validator key.
@@ -141,4 +151,81 @@ message ProvenanceEntry {
   bytes  approver   = 5;
   bytes  reference  = 6;
   bytes  signature  = 7;
+  bytes  mandate_ref = 8;
+}
+
+// MandateRequest submits a mandate entry, canonical CBOR per
+// spec/schemas/mandate.cddl.
+//
+// The node verifies the embedded signature, recomputes the identifier and refuses
+// anything that does not match, so a client cannot assert an identifier that does not
+// commit to the rules it appears to carry.
+message MandateRequest {
+  bytes mandate = 1;  // canonical CBOR of a chain.MandateEntry
+}
+
+// MandateResponse echoes the accepted mandate.
+message MandateResponse {
+  bytes mandate_id = 1;
+  uint64 version   = 2;
+}
+
+// ComplianceCheckRequest asks whether a mandate was honoured over a window.
+//
+// The window is given in both wall-clock and cycle terms. Cycles bound which blocks
+// are scanned; timestamps bound when the obligations were due. start_cycle and
+// end_cycle are optional and default to the whole chain.
+message ComplianceCheckRequest {
+  bytes  mandate_id      = 1;
+  int64  start_timestamp = 2;
+  int64  end_timestamp   = 3;
+  uint64 start_cycle     = 4;
+  uint64 end_cycle       = 5;
+}
+
+// ComplianceGap is one detected omission. The field names and numbering follow
+// compliance-gap in spec/schemas/mandate.cddl.
+message ComplianceGap {
+  bytes   mandate_id             = 1;
+  uint32  rule_index             = 2;
+  string  event_class            = 3;
+  int64   expected_window_start  = 4;
+  int64   expected_window_end    = 5;
+  string  status                 = 6;  // anchored | missing | missing_fields
+  string  details                = 7;
+  // The schema's compliance-gap has no such field; it is reported alongside status
+  // "missing_fields" so a caller can see which required fields were absent.
+  repeated string missing_fields = 8;
+}
+
+// ComplianceReport is the result of verifying one mandate over one window, mirroring
+// compliance-verification in spec/schemas/mandate.cddl plus the derived rate.
+message ComplianceReport {
+  bytes   mandate_id      = 1;
+  string  mandate_label   = 2;
+  int64   start_timestamp = 3;
+  int64   end_timestamp   = 4;
+  uint32  total_expected  = 5;
+  uint32  total_anchored  = 6;
+  double  compliance_rate = 7;
+  repeated ComplianceGap gaps = 8;
+  int64   timestamp       = 9;
+}
+
+message GetActiveMandatesRequest {
+  // timestamp is the instant to evaluate validity windows at. Zero means now.
+  int64 timestamp = 1;
+}
+
+message GetActiveMandatesResponse {
+  // mandates holds canonical CBOR MandateEntry encodings.
+  repeated bytes mandates = 1;
+}
+
+message GetMandateRequest {
+  bytes mandate_id = 1;
+}
+
+message GetMandateResponse {
+  bytes mandate = 1;  // canonical CBOR of a chain.MandateEntry
 }

@@ -37,24 +37,24 @@ type Engine struct {
 	apiLimits APILimits
 	stopped   bool
 
-	storage    EngineStorage // optional persistence
+	storage     EngineStorage     // optional persistence
 	rateLimiter *SubmitterLimiter // sliding-window rate limiter
 
 	quorumConfig chain.QuorumConfig
 
 	// v2.0 fields
-	cycleTimeout   time.Duration // CycleTimeout for PREPARE phase
-	degraded       *DegradedMode // Degraded mode handler
+	cycleTimeout   time.Duration           // CycleTimeout for PREPARE phase
+	degraded       *DegradedMode           // Degraded mode handler
 	pendingEntries []chain.ProvenanceEntry // Retained entries across cycle aborts
 
 	// Incremental Laplacian for efficient λ₁ computation
 	laplacian *state.IncrementalLaplacian
 
 	// Adaptive cycle (EWMA RTT)
-	rttEWMA         time.Duration // Exponential moving average of RTT
-	rttSamples      int           // Number of RTT samples collected
-	lastCycleStart  time.Time     // Start time of current cycle for RTT measurement
-	cycleDuration   time.Duration // Current adaptive cycle duration
+	rttEWMA        time.Duration // Exponential moving average of RTT
+	rttSamples     int           // Number of RTT samples collected
+	lastCycleStart time.Time     // Start time of current cycle for RTT measurement
+	cycleDuration  time.Duration // Current adaptive cycle duration
 
 	// Anchor Publisher (spec §11.1)
 	anchorPublisher *anchor.AnchorPublisher
@@ -65,6 +65,14 @@ type Engine struct {
 	// which ProvenanceEntry cannot carry (it anchors only hash + label).
 	keyRotationValidator *validation.KeyRotationValidator
 	keyRotationBodies    map[[32]byte]*chain.KeyRotationEntry
+
+	// Mandates (spec §13). mandateBodies is guarded by e.mu and holds the full mandate
+	// entries, for the same reason as keyRotationBodies: ProvenanceEntry anchors only a
+	// hash and a label, so the body cannot be recovered from the chain.
+	mandateResolver   *validation.MandateResolver
+	mandateValidator  *validation.MandateValidator
+	complianceChecker *validation.ComplianceChecker
+	mandateBodies     map[[32]byte]*chain.MandateEntry
 }
 
 func NewEngine(node Node, cycleInterval time.Duration) *Engine {
@@ -121,24 +129,24 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 		quorumCfg = chain.QuorumConfig{TotalValidators: len(peers), RequiredSigs: (2*len(peers) + 2) / 3}
 	}
 	eng := &Engine{
-		node:          node,
-		peers:         peers,
-		gossip:        gossip,
-		state:         state.NetworkState{Cycle: 0, Nodes: make(map[string]state.NodeState), Graph: state.ReputationGraph{}},
-		cfg:           state.DefaultConfig,
-		st:            smt.New(state.DefaultConfig.SMTDepth),
-		blocks:        make([]chain.Block, 0),
-		pending:       make([]chain.ProvenanceEntry, 0),
-		anchored:      make(map[[32]byte]*chain.AnchorProof),
-		cycleInterval: cycleInterval,
-		ctx:           ctx,
-		cancel:        cancel,
-		nowFunc:       time.Now,
-		rateLimiter:   NewSubmitterLimiter(5000, time.Minute), // 5000 per minute default
-		quorumConfig:  quorumCfg,
-		cycleTimeout:  10 * time.Second, // Default 10s cycle timeout
+		node:           node,
+		peers:          peers,
+		gossip:         gossip,
+		state:          state.NetworkState{Cycle: 0, Nodes: make(map[string]state.NodeState), Graph: state.ReputationGraph{}},
+		cfg:            state.DefaultConfig,
+		st:             smt.New(state.DefaultConfig.SMTDepth),
+		blocks:         make([]chain.Block, 0),
+		pending:        make([]chain.ProvenanceEntry, 0),
+		anchored:       make(map[[32]byte]*chain.AnchorProof),
+		cycleInterval:  cycleInterval,
+		ctx:            ctx,
+		cancel:         cancel,
+		nowFunc:        time.Now,
+		rateLimiter:    NewSubmitterLimiter(5000, time.Minute), // 5000 per minute default
+		quorumConfig:   quorumCfg,
+		cycleTimeout:   10 * time.Second, // Default 10s cycle timeout
 		pendingEntries: make([]chain.ProvenanceEntry, 0),
-		laplacian:       state.DefaultIncrementalLaplacian(),
+		laplacian:      state.DefaultIncrementalLaplacian(),
 		// Adaptive cycle: start with BaseInterval
 		cycleDuration: state.DefaultConfig.BaseInterval,
 		// Degraded mode handler
@@ -169,6 +177,7 @@ func newEngine(node Node, cycleInterval time.Duration, gossip GossipChannel, pee
 	// Initialize key rotation (spec §8) after the validator set exists, so the
 	// validator starts from the right key material.
 	eng.initKeyRotationLocked()
+	eng.initMandatesLocked()
 
 	return eng
 }
@@ -307,6 +316,12 @@ func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
 
 	cfg := e.apiLimitsLocked()
 	if err := validateEntry(entry.Hash, entry.Submitter, entry.Label, cfg); err != nil {
+		return err
+	}
+	// An entry that names a mandate is asserting it satisfies that mandate's rules
+	// (spec §13). The claim is checked structurally here; the events themselves are
+	// checked at verification time by the compliance checker.
+	if err := e.validateEntryAgainstMandatesLocked(&entry); err != nil {
 		return err
 	}
 	if len(e.pending) >= cfg.MaxTotalPending {
@@ -488,6 +503,10 @@ func (e *Engine) RunCycle() {
 	// Admit any key rotation anchored in this batch before signatures are verified,
 	// so a rotation learned in this cycle is honoured from the next cycle onwards.
 	e.processKeyRotationEntriesLocked(allPending)
+
+	// Admit mandates anchored in this batch, for the same reason and at the same point:
+	// a mandate learned this cycle starts governing submissions from the next one.
+	e.processMandateEntriesLocked(allPending)
 
 	// Determine active validators from ValidatorSet (not all nodes in state)
 	// ValidatorSet contains only the actual consensus validators
