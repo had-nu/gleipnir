@@ -7,7 +7,7 @@
 
 ---
 
-# **🌐 GAP #3: LIGHT CLIENT SERVICE (Continuação)**
+# GAP #3: LIGHT CLIENT SERVICE (Continuação)
 
 ## **3.2 gRPC Service Definition**
 
@@ -506,21 +506,21 @@ func TestSMTProofVerifiableByLightClient(t *testing.T) {
 
 ---
 
-# **📊 PLANO DE IMPLEMENTAÇÃO COMPLETO**
+# PLANO DE IMPLEMENTAÇÃO COMPLETO
 
-## **🎯 Priorização e Cronograma**
+## Priorização e Cronograma
 
 ### **Fase 1: Key Rotation (2-3 dias) - PRIORIDADE CRÍTICA**
 
 | Dia | Tarefa | Arquivos | Linhas | Status |
 |-----|--------|---------|-------|--------|
-| 1 | Infraestrutura básica | `key_rotation.go`, `key_rotation_validator.go` | ~350 | ⬜ |
-| 1 | Integração no Engine | `engine.go` (modificações) | ~50 | ⬜ |
-| 2 | Validação das 5 regras | `key_rotation.go` (Validate) | ~100 | ⬜ |
-| 2 | Overlap period handling | `key_rotation_validator.go` (GetActivePublicKey) | ~50 | ⬜ |
-| 2 | Endpoint gRPC | `api.proto`, `api.pb.go` | ~120 | ⬜ |
-| 3 | Testes (TC-ROT-01, TC-ROT-02) | `key_rotation_test.go` | ~250 | ⬜ |
-| 3 | Integração final | Testes de integração | ~50 | ⬜ |
+| 1 | Infraestrutura básica | `key_rotation.go`, `key_rotation_validator.go` | ~350 | |
+| 1 | Integração no Engine | `engine.go` (modificações) | ~50 | |
+| 2 | Validação das 5 regras | `key_rotation.go` (Validate) | ~100 | |
+| 2 | Overlap period handling | `key_rotation_validator.go` (GetActivePublicKey) | ~50 | |
+| 2 | Endpoint gRPC | `api.proto`, `api.pb.go` | ~120 | |
+| 3 | Testes (TC-ROT-01, TC-ROT-02) | `key_rotation_test.go` | ~250 | |
+| 3 | Integração final | Testes de integração | ~50 | |
 
 **Total Fase 1:** ~970 linhas | **2-3 dias**
 
@@ -530,13 +530,13 @@ func TestSMTProofVerifiableByLightClient(t *testing.T) {
 
 | Dia | Tarefa | Arquivos | Linhas | Status |
 |-----|--------|---------|-------|--------|
-| 1 | Mandate Resolver | `mandate_resolver.go` | ~150 | ⬜ |
-| 1-2 | Mandate Validator | `mandate_validator.go` | ~200 | ⬜ |
-| 2-3 | Compliance Checker | `compliance_checker.go` | ~300 | ⬜ |
-| 3 | Integração no Engine | `engine.go` (Enqueue) | ~30 | ⬜ |
-| 4 | Endpoints gRPC | `api.proto`, `api.pb.go` | ~100 | ⬜ |
-| 4-5 | Implementação endpoints | `server.go` (modificações) | ~100 | ⬜ |
-| 5 | Testes | `compliance_test.go` | ~300 | ⬜ |
+| 1 | Mandate Resolver | `mandate_resolver.go` | ~150 | |
+| 1-2 | Mandate Validator | `mandate_validator.go` | ~200 | |
+| 2-3 | Compliance Checker | `compliance_checker.go` | ~300 | |
+| 3 | Integração no Engine | `engine.go` (Enqueue) | ~30 | |
+| 4 | Endpoints gRPC | `api.proto`, `api.pb.go` | ~100 | |
+| 4-5 | Implementação endpoints | `server.go` (modificações) | ~100 | |
+| 5 | Testes | `compliance_test.go` | ~300 | |
 
 **Total Fase 2:** ~1,180 linhas | **3-5 dias**
 
@@ -546,33 +546,33 @@ func TestSMTProofVerifiableByLightClient(t *testing.T) {
 
 | Dia | Tarefa | Arquivos | Linhas | Status |
 |-----|--------|---------|-------|--------|
-| 1 | Light Client Service | `service.go` | ~300 | ⬜ |
-| 1 | Protobuf definition | `api.proto` | ~150 | ⬜ |
-| 2 | gRPC Server | `server.go` | ~200 | ⬜ |
-| 2 | Integração com provenanced | `main.go` (modificações) | ~20 | ⬜ |
-| 3 | REST API (opcional) | `rest.go` | ~150 | ⬜ |
-| 3 | Testes (TC-ZK-01) | `service_test.go` | ~250 | ⬜ |
+| 1 | Light Client Service | `service.go` | ~300 | |
+| 1 | Protobuf definition | `api.proto` | ~150 | |
+| 2 | gRPC Server | `server.go` | ~200 | |
+| 2 | Integração com provenanced | `main.go` (modificações) | ~20 | |
+| 3 | REST API (opcional) | `rest.go` | ~150 | |
+| 3 | Testes (TC-ZK-01) | `service_test.go` | ~250 | |
 
 **Total Fase 3:** ~1,070 linhas | **2-3 dias**
 
 ---
 
-## **📈 Métricas de Sucesso**
+## Métricas de Sucesso
 
 ### **Após Cada Fase:**
 
 | Fase | Compliance | Funcionalidades Habilitadas |
 |------|------------|-------------------------------|
 | **Base (Atual)** | ~92% | Criptografia, Consenso, SMT, Anchor Publishers |
-| **Fase 1 (Key Rotation)** | ~95% | ✅ Rotação de chaves sem downtime |
-| **Fase 2 (Mandate Compliance)** | ~98% | ✅ Validação de mandatos, Detecção de omissões |
-| **Fase 3 (Light Client)** | **100%** | ✅ Verificação por terceiros |
+| **Fase 1 (Key Rotation)** | ~95% | Rotação de chaves sem downtime |
+| **Fase 2 (Mandate Compliance)** | ~98% | Validação de mandatos, Detecção de omissões |
+| **Fase 3 (Light Client)** | **100%** | Verificação por terceiros |
 
 ---
 
-## **🎯 Checklist de Entrega**
+## Checklist de Entrega
 
-### **🔐 Key Rotation (Gap #1)**
+### Key Rotation (Gap #1)
 - [ ] `pkg/chain/key_rotation.go` - Tipo KeyRotationEntry
 - [ ] `pkg/validation/key_rotation.go` - Validador com 5 regras
 - [ ] `pkg/consensus/engine.go` - Integração (processKeyRotationEntries, verifySignatureWithOverlap)
@@ -581,7 +581,7 @@ func TestSMTProofVerifiableByLightClient(t *testing.T) {
 - [ ] `pkg/validation/key_rotation_test.go` - Testes (TC-ROT-01, TC-ROT-02)
 - [ ] Documentação atualizada
 
-### **📜 Mandate Compliance (Gap #2)**
+### Mandate Compliance (Gap #2)
 - [ ] `pkg/validation/mandate_resolver.go` - Resolver de mandatos
 - [ ] `pkg/validation/mandate_validator.go` - Validador de mandatos
 - [ ] `pkg/validation/compliance_checker.go` - Checker de conformidade
@@ -591,7 +591,7 @@ func TestSMTProofVerifiableByLightClient(t *testing.T) {
 - [ ] `pkg/validation/compliance_test.go` - Testes
 - [ ] Documentação atualizada
 
-### **🌐 Light Client Service (Gap #3)**
+### Light Client Service (Gap #3)
 - [ ] `pkg/lightclient/service.go` - Serviço principal
 - [ ] `pkg/lightclient/api.proto` - Definição protobuf
 - [ ] `pkg/lightclient/server.go` - Servidor gRPC
@@ -602,7 +602,7 @@ func TestSMTProofVerifiableByLightClient(t *testing.T) {
 
 ---
 
-## **🔧 Dependências e Pré-requisitos**
+## Dependências e Pré-requisitos
 
 ### **Dependências Externas (já existentes):**
 ```bash
@@ -624,7 +624,7 @@ protoc --go_out=. --go_opt=paths=source_relative \
 
 ---
 
-## **📋 Resumo de Arquivos e Linhas**
+## Resumo de Arquivos e Linhas
 
 | Gap | Arquivos Novos | Arquivos Modificados | Total Linhas | Esforço |
 |-----|----------------|---------------------|--------------|---------|
@@ -635,19 +635,19 @@ protoc --go_out=. --go_opt=paths=source_relative \
 
 ---
 
-## **🎉 Conclusão**
+## Conclusão
 
 **O Gleipnir está a apenas 5-10 dias de 100% compliance com 3CP v2.0.**
 
 ### **O que já está pronto (92% compliance):**
-- ✅ **Todas as primitivas criptográficas** (Dilithium3, Kyber1024, VRF, BLAKE3, ChaCha20-Poly1305)
-- ✅ **Wire format** (CBOR canonical, todos os campos v2.0)
-- ✅ **Consenso BFT** (2-phase, VRF leader, quorum ceil(2N/3), degraded mode)
-- ✅ **Sparse Merkle Tree** (depth 256, BLAKE3-256, proofs)
-- ✅ **Anchor Publishers** (filesystem, IPFS, S3)
-- ✅ **Adaptive Cycle** (EWMA RTT, SafetyFactor)
-- ✅ **UID0 Identity** (HKDF-SHA256, NetworkID)
-- ✅ **Laplacian λ₁** (incremental, Lanczos)
+-  **Todas as primitivas criptográficas** (Dilithium3, Kyber1024, VRF, BLAKE3, ChaCha20-Poly1305)
+-  **Wire format** (CBOR canonical, todos os campos v2.0)
+-  **Consenso BFT** (2-phase, VRF leader, quorum ceil(2N/3), degraded mode)
+-  **Sparse Merkle Tree** (depth 256, BLAKE3-256, proofs)
+-  **Anchor Publishers** (filesystem, IPFS, S3)
+-  **Adaptive Cycle** (EWMA RTT, SafetyFactor)
+-  **UID0 Identity** (HKDF-SHA256, NetworkID)
+-  **Laplacian λ₁** (incremental, Lanczos)
 
 ### **O que falta (8% compliance):**
 1. **Key Rotation** (2-3 dias) - Rotação de chaves sem downtime
@@ -663,7 +663,7 @@ protoc --go_out=. --go_opt=paths=source_relative \
 
 ---
 
-## **📚 Documentação de Referência**
+## Documentação de Referência
 
 - **Especificação Principal:** `SPEC-3CP-V2.md` (3CP v2.0)
 - **Compliance Report:** `gleipnir_compliance_report.md`
@@ -673,5 +673,5 @@ protoc --go_out=. --go_opt=paths=source_relative \
 
 **Documento gerado:** 2026-08-25  
 **Autor:** Vibe Code (Mistral AI)  
-**Status:** ✅ **Pronto para implementação com OpenCode**  
+**Status:**  **Pronto para implementação com OpenCode**
 **Versão:** 2.1.0

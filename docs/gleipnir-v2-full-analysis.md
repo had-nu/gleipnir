@@ -8,22 +8,28 @@
 **Alterações:** +2,314 / −1,547 linhas em 67 arquivos  
 **Licença:** AGPL-3.0
 
+> **Point-in-time record.** Written 2026-07-29 against commit `f9c74d9`. The upgrade it reviews has since been completed: the gaps it scores 92/100 on are all closed, cryptography moved to FIPS 204 ML-DSA-65, and the CI gates it criticises are now clean. Its finding 11, the static `build-passing` badge, has been replaced with a real workflow badge.
+>
+> Kept as the historical record of what was true then, unedited. Where an item below has
+> since been resolved, the resolution is noted rather than the item removed, so the analysis
+> stays auditable against what it was reacting to.
+
 ---
 
 ## 1. Resumo Executivo
 
 A atualização v2.0 transforma o Gleipnir em uma **implementação de referência do protocolo 3CP (Cryptographic Chain-of-Custody Protocol)** — uma rede de proveniência imutável, auditável criptograficamente, sem tokens, sem mining e sem dependências externas.
 
-**Avaliação geral:** ⭐⭐⭐⭐☆ (4/5)
+**Avaliação geral:**  (4/5)
 
 | Aspecto | Nota | Observação |
 |---------|------|------------|
-| Arquitetura | ⭐⭐⭐⭐⭐ | Bem estruturada, camadas claras |
-| Documentação | ⭐⭐⭐⭐⭐ | README, guides, verification, architecture |
-| DevOps/CI | ⭐⭐⭐⭐☆ | Completo, mas com pequenas inconsistências |
-| Testes | ⭐⭐⭐☆☆ | Existem, mas coverage parcial |
-| Segurança | ⭐⭐⭐⭐☆ | Boa, mas gaps documentados na API |
-| Versionamento | ⭐⭐☆☆☆ | Versões Go inexistentes no go.mod/Dockerfile |
+| Arquitetura | | Bem estruturada, camadas claras |
+| Documentação | | README, guides, verification, architecture |
+| DevOps/CI | | Completo, mas com pequenas inconsistências |
+| Testes | | Existem, mas coverage parcial |
+| Segurança | | Boa, mas gaps documentados na API |
+| Versionamento | | Versões Go inexistentes no go.mod/Dockerfile |
 
 ---
 
@@ -109,20 +115,20 @@ gleipnir/
 
 | Pacote | Versão | Propósito | Avaliação |
 |--------|--------|-----------|-----------|
-| `github.com/bwesterb/go-ristretto` | v1.2.4 | Curva Ristretto255 para VRF | ✅ Reputado |
-| `github.com/cloudflare/circl` | v1.6.4 | Criptografia avançada (Cloudflare) | ✅ Reputado |
-| `github.com/fxamacker/cbor/v2` | v2.9.2 | Encoding CBOR | ✅ Reputado |
-| `github.com/libp2p/go-libp2p` | v0.48.0 | Rede P2P | ✅ Usado por IPFS/Ethereum |
-| `github.com/multiformats/go-multiaddr` | v0.16.1 | Endereçamento P2P | ✅ |
-| `github.com/prometheus/client_golang` | v1.24.0 | Métricas Prometheus | ✅ Padrão |
-| `github.com/spf13/cobra` | v1.10.2 | CLI framework | ✅ Padrão |
-| `go.etcd.io/bbolt` | v1.5.0 | BoltDB embedded | ✅ Usado pelo etcd |
-| `golang.org/x/crypto` | v0.54.0 | Crypto padrão Go | ✅ |
-| `gonum.org/v1/gonum` | v0.17.0 | Computação numérica (Laplacian) | ✅ |
-| `google.golang.org/grpc` | v1.82.1 | gRPC | ✅ Padrão |
-| `google.golang.org/protobuf` | v1.36.11 | Protobuf | ✅ |
-| `gopkg.in/yaml.v3` | v3.0.1 | YAML parsing | ✅ |
-| `lukechampine.com/blake3` | v1.4.1 | Hashing Blake3 | ✅ Reputado |
+| `github.com/bwesterb/go-ristretto` | v1.2.4 | Curva Ristretto255 para VRF | Reputado |
+| `github.com/cloudflare/circl` | v1.6.4 | Criptografia avançada (Cloudflare) | Reputado |
+| `github.com/fxamacker/cbor/v2` | v2.9.2 | Encoding CBOR | Reputado |
+| `github.com/libp2p/go-libp2p` | v0.48.0 | Rede P2P | Usado por IPFS/Ethereum |
+| `github.com/multiformats/go-multiaddr` | v0.16.1 | Endereçamento P2P | |
+| `github.com/prometheus/client_golang` | v1.24.0 | Métricas Prometheus | Padrão |
+| `github.com/spf13/cobra` | v1.10.2 | CLI framework | Padrão |
+| `go.etcd.io/bbolt` | v1.5.0 | BoltDB embedded | Usado pelo etcd |
+| `golang.org/x/crypto` | v0.54.0 | Crypto padrão Go | |
+| `gonum.org/v1/gonum` | v0.17.0 | Computação numérica (Laplacian) | |
+| `google.golang.org/grpc` | v1.82.1 | gRPC | Padrão |
+| `google.golang.org/protobuf` | v1.36.11 | Protobuf | |
+| `gopkg.in/yaml.v3` | v3.0.1 | YAML parsing | |
+| `lukechampine.com/blake3` | v1.4.1 | Hashing Blake3 | Reputado |
 
 ### Dependências Indiretas (seleção)
 
@@ -147,11 +153,11 @@ gleipnir/
 
 | Job | Descrição | Status |
 |-----|-----------|--------|
-| `lint` | golangci-lint v1.64.8 | ✅ |
-| `build` | `go build ./...` | ✅ |
-| `test` | `go test ./pkg/... -v -count=1 -timeout=300s` | ⚠️ Só pkg/, não cmd/ |
-| `test-race` | `go test -race -short ./pkg/... -count=1 -timeout=600s` | ⚠️ Só pkg/, flag `-short` |
-| `vet` | `go vet ./...` | ⚠️ Usa `actions/checkout@3` (deveria ser @v4) |
+| `lint` | golangci-lint v1.64.8 | |
+| `build` | `go build ./...` | |
+| `test` | `go test ./pkg/... -v -count=1 -timeout=300s` | Só pkg/, não cmd/ |
+| `test-race` | `go test -race -short ./pkg/... -count=1 -timeout=600s` | Só pkg/, flag `-short` |
+| `vet` | `go vet ./...` | Usa `actions/checkout@3` (deveria ser @v4) |
 
 **Problemas identificados:**
 1. **Inconsistência de checkout**: O job `vet` usa `actions/checkout@3` enquanto todos os outros usam `@v4`
@@ -184,21 +190,21 @@ O Makefile é **excepcionalmente completo**:
 | `docker-logs/ps` | Operações Docker |
 | `docker-conformance` | **Testes de conformidade completos** (5 validadores, 33 test cases) |
 
-**Avaliação:** ⭐⭐⭐⭐⭐ — Makefile exemplar.
+**Avaliação:**  — Makefile exemplar.
 
 ---
 
 ## 7. Análise do Dockerfile
 
 ```dockerfile
-FROM golang:1.26-alpine AS builder      # ⚠️ Go 1.26 não existe
+FROM golang:1.26-alpine AS builder      #  Go 1.26 não existe
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build ...           # ✅ Static binaries
+RUN CGO_ENABLED=0 go build ...           #  Static binaries
 
-FROM alpine:3.24                         # ✅ Minimal final image
+FROM alpine:3.24                         #  Minimal final image
 RUN apk add --no-cache ca-certificates
 COPY --from=builder ... /usr/local/bin/
 EXPOSE 50051 9090
@@ -210,11 +216,11 @@ ENTRYPOINT ["provenanced"]
 2. **Inconsistência com go.mod**: go.mod diz `go 1.25.7` (também inexistente), CI usa `1.25`, Dockerfile usa `1.26-alpine`
 
 **Pontos positivos:**
-- Multi-stage build ✅
-- CGO_ENABLED=0 (binários estáticos) ✅
-- Alpine minimalista ✅
-- ca-certificates instalados ✅
-- Exposição de portas correta ✅
+- Multi-stage build
+- CGO_ENABLED=0 (binários estáticos)
+- Alpine minimalista
+- ca-certificates instalados
+- Exposição de portas correta
 
 ---
 
@@ -230,10 +236,10 @@ ENTRYPOINT ["provenanced"]
 | `grafana` | Dashboards (profile `monitor`) |
 
 **Características:**
-- Volumes separados para UIDs e dados ✅
-- Rede bridge isolada (`ipc-net`) ✅
-- Depends_on com condition `service_completed_successfully` ✅
-- Portas mapeadas sequencialmente (50051-50055) ✅
+- Volumes separados para UIDs e dados
+- Rede bridge isolada (`ipc-net`)
+- Depends_on com condition `service_completed_successfully`
+- Portas mapeadas sequencialmente (50051-50055)
 
 ---
 
@@ -243,12 +249,12 @@ ENTRYPOINT ["provenanced"]
 
 | Componente | Implementação | Status |
 |------------|---------------|--------|
-| Assinaturas | Dilithium3 (PQC) | ✅ Pós-quântico |
-| VRF | Ristretto255 (RFC 9381) | ✅ Verificável |
-| Hashing | Blake3 | ✅ Rápido e seguro |
-| KEM | Kyber1024 | ✅ Pós-quântico |
-| AEAD | ChaCha20-Poly1305 | ✅ |
-| SMT | Blake3-based, depth 256 | ✅ |
+| Assinaturas | Dilithium3 (PQC) | Pós-quântico |
+| VRF | Ristretto255 (RFC 9381) | Verificável |
+| Hashing | Blake3 | Rápido e seguro |
+| KEM | Kyber1024 | Pós-quântico |
+| AEAD | ChaCha20-Poly1305 | |
+| SMT | Blake3-based, depth 256 | |
 
 ### 9.2 Gaps de Segurança Documentados (INTEGRATION_GUIDE.md)
 
@@ -256,12 +262,12 @@ O projeto documenta honestamente seus gaps:
 
 | # | Gap | Severidade |
 |---|-----|------------|
-| 1 | **No `BlockHash` in Block response** — não é possível verificar PrevHash independentemente | 🔴 Alto |
-| 2 | **StreamBlocks is Unimplemented** — só polling via `GetBlock(i)` | 🟡 Médio |
-| 3 | **SubChainManager not exposed via gRPC** — sem API de cross-chain proofs | 🟡 Médio |
-| 4 | **SubmitResponse.block_index/time always 0** — não indica quando o hash será ancorado | 🟡 Médio |
-| 5 | **Per-entry Signature accepted but not verified server-side** — sem registry de chaves públicas para non-repudiation | 🔴 Alto |
-| 6 | **No blob storage** — só ancora hashes, dados originais armazenados separadamente | 🟢 Esperado |
+| 1 | **No `BlockHash` in Block response** — não é possível verificar PrevHash independentemente | Alto |
+| 2 | **StreamBlocks is Unimplemented** — só polling via `GetBlock(i)` | Médio |
+| 3 | **SubChainManager not exposed via gRPC** — sem API de cross-chain proofs | Médio |
+| 4 | **SubmitResponse.block_index/time always 0** — não indica quando o hash será ancorado | Médio |
+| 5 | **Per-entry Signature accepted but not verified server-side** — sem registry de chaves públicas para non-repudiation | Alto |
+| 6 | **No blob storage** — só ancora hashes, dados originais armazenados separadamente | Esperado |
 
 ### 9.3 VERIFICATION.md — Checklist de Qualidade
 
@@ -390,14 +396,14 @@ O projeto demonstra **maturidade de engenharia** através de:
 3. BlockHash ausente na resposta (limita auditabilidade)
 
 **Status:**
-- ✅ Estrutura de código: **Correta**
-- ✅ Decisões arquiteturais: **Sólidas**
-- ✅ Dependências: **Excelentes**
-- ✅ Documentação: **Exemplar**
-- ✅ DevOps: **Muito bom**
-- ⚠️ Testes: **Parciais** (coverage de pacotes críticos não confirmada)
-- 🔴 Versionamento Go: **Inconsistente/quebrado**
-- 🔴 Segurança API: **Gaps documentados, alguns críticos**
+-  Estrutura de código: **Correta**
+-  Decisões arquiteturais: **Sólidas**
+-  Dependências: **Excelentes**
+-  Documentação: **Exemplar**
+-  DevOps: **Muito bom**
+-  Testes: **Parciais** (coverage de pacotes críticos não confirmada)
+-  Versionamento Go: **Inconsistente/quebrado**
+-  Segurança API: **Gaps documentados, alguns críticos**
 
 **Recomendação:** Corrigir os itens P0 antes de qualquer deploy. O projeto tem fundações excelentes, mas os detalhes de implementação da API gRPC precisam de atenção imediata.
 

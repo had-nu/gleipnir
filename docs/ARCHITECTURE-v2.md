@@ -1,6 +1,6 @@
 # Gleipnir v2.0 — Especificação de Arquitetura Completa
 **Protocolo Base:** 3CP v2.0 (SPEC-3CP-V2.md)
-**Linguagem:** Go 1.22+
+**Linguagem:** Go 1.27
 **Licença:** AGPL-3.0
 **Status:** ARQUITETURA DE REFERÊNCIA
 
@@ -805,7 +805,7 @@ logging:
 
 | Documento | Local no repo Gleipnir | Conteúdo |
 |-----------|------------------------|----------|
-| SPEC-3CP-V2.md | `../3CP/spec/SPEC-3CP-V2.md` (link externo) | Protocolo normativo |
+| SPEC-3CP-V2.md | https://github.com/had-nu/3CP | Protocolo normativo (repositório separado) |
 | CDDLs | `../3CP/spec/schemas/` | Schemas de dados |
 | Test Vectors | `../3CP/spec/examples/` | Vetores de teste |
 | Conformance Suite | `cmd/conformance-test/` | Implementação dos 12 TCs v2.0 |

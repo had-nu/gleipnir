@@ -7,19 +7,23 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/go-1.24+-00ADD8?logo=go&logoColor=white" alt="Go">
+  <img src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white" alt="Go">
   <img src="https://img.shields.io/badge/license-AGPL--3.0-blue" alt="License">
-  <img src="https://img.shields.io/badge/build-passing-brightgreen" alt="Build">
+  <img src="https://github.com/had-nu/gleipnir/actions/workflows/ci.yml/badge.svg" alt="CI">
   <img src="https://img.shields.io/badge/status-active-2ea44f" alt="Status">
 </p>
 
 <p align="center">
-  <a href="README.pt.md"><b>Ler em Portugues</b> &gt;</a>
+  <a href="README.pt.md"><b>Ler em Português</b> &gt;</a>
 </p>
 
 Go reference implementation of the
 [**3CP** (Cryptographic Chain-of-Custody Protocol)](https://github.com/had-nu/3CP)
 — a minimal, cryptographically auditable chain-of-custody network.
+
+The normative protocol specification lives in the
+[3CP repository](https://github.com/had-nu/3CP) as `spec/SPEC-3CP-V2.md`. This repository
+implements it; where the two disagree, the specification is authoritative.
 
 ## Problem
 
@@ -71,6 +75,9 @@ A lightweight **M-of-N Dilithium3-quorum** network that anchors hashes into an i
 | **Sub-chains + cross-chain proofs** | Each service gets its own isolated chain, periodically checkpointed into the parent chain. An auditor sees per-service evidence plus a cryptographic link to the global timeline. |
 | **Contract-bound UID0 identity** | Each validator node is cryptographically bound to a company contract hash — the node speaks for the legal entity, not for an anonymous key. |
 | **Decision anchoring** | Each anchored entry includes the submitter's identity, optionally an approver's identity for split-authority decisions, a reference to related entries for chained decisions, and a per-entry Dilithium3 signature for non-repudiation. An auditor can trace a specific artifact back to the person or system that submitted (and approved) it, linked to related evidence, with cryptographic proof binding each identity to the entry content. |
+| **Key rotation (§8)** | A validator can replace its signing key without downtime. Both keys stay authoritative through an overlap window, so blocks signed before and after the change both verify — an auditor does not hit a gap in the record where the key changed. |
+| **Mandates (§13)** | An operator can publish a signed mandate declaring what MUST be anchored, and an auditor can then ask whether the chain honoured it. The rules are covered by the identifier and the issuer by its signature, so neither can be altered after the fact. |
+| **Light client verification (§12.2)** | A third party can verify a block without running consensus and without trusting the node it asked: PREPARE quorum against a validator set it already trusts, the proposer's signature, and the chain of previous hashes. The set comes from outside the block, so a block cannot nominate the signers that would excuse it. |
 | **Laplacian self-supervision** | The network monitors its own health via diffusion eigenvalues. An auditor can verify that the network was operational at the claimed times, not just that blocks exist. |
 
 ## How it works

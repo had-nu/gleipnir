@@ -10,7 +10,7 @@
 
 ---
 
-## **📋 Sumário Executivo**
+## Sumário Executivo
 
 Este documento define **especificações técnicas detalhadas** para implementar os 3 gaps críticos identificados no Gleipnir.
 
@@ -24,7 +24,7 @@ Este documento define **especificações técnicas detalhadas** para implementar
 
 ---
 
-# **🔐 GAP #1: KEY ROTATION PROTOCOL**
+# GAP #1: KEY ROTATION PROTOCOL
 **Prioridade: CRÍTICA | Esforço: 2-3 dias | Impacto: BLOCKING**
 
 ## **1.1 Arquivos a Criar/Modificar**
@@ -304,7 +304,7 @@ func TestKeyRotationEarlyEffectiveCycle(t *testing.T) {
 
 ---
 
-## **📜 GAP #2: MANDATE COMPLIANCE VERIFICATION**
+## GAP #2: MANDATE COMPLIANCE VERIFICATION
 **Prioridade: ALTA | Esforço: 3-5 dias | Impacto: CORE INNOVATION**
 
 ## **2.1 Arquivos a Criar/Modificar**
@@ -750,7 +750,7 @@ func TestComplianceCheck(t *testing.T) {
 
 ---
 
-## **🌐 GAP #3: LIGHT CLIENT SERVICE**
+## GAP #3: LIGHT CLIENT SERVICE
 **Prioridade: MÉDIA | Esforço: 2-3 dias | Impacto: THIRD-PARTY VERIFICATION**
 
 ## **3.1 Arquivos a Criar/Modificar**

@@ -8,7 +8,7 @@
 
 ---
 
-# **📋 SUMÁRIO EXECUTIVO**
+# SUMÁRIO EXECUTIVO
 
 ## **O que fazer?**
 Implementar 3 features que faltam no Gleipnir para alcançar **100% compliance com 3CP v2.0**:
@@ -23,12 +23,12 @@ Implementar 3 features que faltam no Gleipnir para alcançar **100% compliance c
 
 ---
 
-# **🎯 COMO USAR ESTE GUIA**
+# COMO USAR ESTE GUIA
 
 ## **Estrutura dos Documentos**
 
 ```
-📁 /workspace/
+/workspace/
 ├── SPEC-GLEIPNIR-GAPS-V2.1.md          # Especificação técnica detalhada (Parte 1)
 │   ├── Gap #1: Key Rotation Protocol   # ~970 linhas de código
 │   ├── Gap #2: Mandate Compliance      # ~1,180 linhas de código
@@ -50,7 +50,7 @@ Implementar 3 features que faltam no Gleipnir para alcançar **100% compliance c
 
 ---
 
-# **🚀 PLANO DE AÇÃO RECOMENDADO**
+# PLANO DE AÇÃO RECOMENDADO
 
 ## **Opção A: Implementação Sequencial (Recomendado)**
 
@@ -128,12 +128,12 @@ Desvantagem: Requer coordenação entre equipes
 
 ---
 
-# **📦 ESTRUTURA DE ARQUIVOS E DIRETÓRIOS**
+# ESTRUTURA DE ARQUIVOS E DIRETÓRIOS
 
 ## **Arquivos Novos a Criar**
 
 ```
-📁 pkg/
+pkg/
 ├── chain/
 │   └── key_rotation.go              # Gap #1 - Tipo KeyRotationEntry
 │
@@ -156,7 +156,7 @@ Desvantagem: Requer coordenação entre equipes
 ## **Arquivos Existentes a Modificar**
 
 ```
-📁 pkg/
+pkg/
 ├── consensus/
 │   └── engine.go                    # Adicionar: keyRotationValidator, mandateValidator, complianceChecker
 │                                       # Modificar: NewEngine, Enqueue, processKeyRotationEntries
@@ -165,14 +165,14 @@ Desvantagem: Requer coordenação entre equipes
 │   ├── api.proto                    # Adicionar: endpoints de key rotation e mandate compliance
 │   └── api.pb.go                    # Implementar: SubmitKeyRotation, CheckCompliance, GetActiveMandates
 │
-📁 cmd/
+cmd/
 └── provenanced/
     └── main.go                       # Adicionar: flags para light client server
 ```
 
 ---
 
-# **🔧 COMANDOS ÚTEIS**
+# COMANDOS ÚTEIS
 
 ## **Gerar Código Protobuf**
 
@@ -182,7 +182,7 @@ go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
 
 # Gerar código para lightclient
-cd /workspace/github__had-nu__gleipnir
+cd ~/gleipnir
 protoc --go_out=. --go_opt=paths=source_relative \
     --go-grpc_out=. --go-grpc_opt=paths=source_relative \
     pkg/lightclient/api.proto
@@ -210,7 +210,7 @@ go get -u github.com/fxamacker/cbor/v2
 
 ```bash
 # Compilar todo o projeto
-cd /workspace/github__had-nu__gleipnir
+cd ~/gleipnir
 go build ./...
 
 # Executar testes específicos
@@ -224,9 +224,9 @@ go test ./... -v
 
 ---
 
-# **📊 CHECKLIST DE IMPLEMENTAÇÃO**
+# CHECKLIST DE IMPLEMENTAÇÃO
 
-## **🔐 GAP #1: KEY ROTATION**
+## GAP #1: KEY ROTATION
 
 ### **Arquivos a Criar**
 - [ ] `pkg/chain/key_rotation.go` (200 linhas)
@@ -270,7 +270,7 @@ go test ./... -v
 
 ---
 
-## **📜 GAP #2: MANDATE COMPLIANCE**
+## GAP #2: MANDATE COMPLIANCE
 
 ### **Arquivos a Criar**
 - [ ] `pkg/validation/mandate_resolver.go` (150 linhas)
@@ -329,7 +329,7 @@ go test ./... -v
 
 ---
 
-## **🌐 GAP #3: LIGHT CLIENT SERVICE**
+## GAP #3: LIGHT CLIENT SERVICE
 
 ### **Arquivos a Criar**
 - [ ] `pkg/lightclient/service.go` (300 linhas)
@@ -380,7 +380,7 @@ go test ./... -v
 
 ---
 
-# **📈 MÉTRICAS DE PROGRESSO**
+# MÉTRICAS DE PROGRESSO
 
 ## **Checklist Diário**
 
@@ -401,22 +401,22 @@ go test ./... -v
 
 | Dia | Gap | Tarefa | Status | Linhas | Testes |
 |-----|-----|--------|--------|--------|--------|
-| 1 | #1 | Infraestrutura Key Rotation | ⬜ | 350 | ⬜ |
-| 1 | #1 | Integração no Engine | ⬜ | 50 | ⬜ |
-| 2 | #1 | Validação das 5 regras | ⬜ | 100 | ⬜ |
-| 2 | #1 | Endpoint gRPC | ⬜ | 120 | ⬜ |
-| 3 | #1 | Testes | ⬜ | 250 | ⬜ |
-| 1-2 | #2 | Mandate Resolver + Validator | ⬜ | 350 | ⬜ |
-| 3-4 | #2 | Compliance Checker | ⬜ | 300 | ⬜ |
-| 4 | #2 | Endpoints gRPC | ⬜ | 100 | ⬜ |
-| 5 | #2 | Testes | ⬜ | 300 | ⬜ |
-| 1 | #3 | Light Client Service | ⬜ | 300 | ⬜ |
-| 2 | #3 | Protobuf + gRPC Server | ⬜ | 350 | ⬜ |
-| 3 | #3 | Integração + Testes | ⬜ | 400 | ⬜ |
+| 1 | #1 | Infraestrutura Key Rotation | | 350 | |
+| 1 | #1 | Integração no Engine | | 50 | |
+| 2 | #1 | Validação das 5 regras | | 100 | |
+| 2 | #1 | Endpoint gRPC | | 120 | |
+| 3 | #1 | Testes | | 250 | |
+| 1-2 | #2 | Mandate Resolver + Validator | | 350 | |
+| 3-4 | #2 | Compliance Checker | | 300 | |
+| 4 | #2 | Endpoints gRPC | | 100 | |
+| 5 | #2 | Testes | | 300 | |
+| 1 | #3 | Light Client Service | | 300 | |
+| 2 | #3 | Protobuf + gRPC Server | | 350 | |
+| 3 | #3 | Integração + Testes | | 400 | |
 
 ---
 
-# **🎯 DICAS E MELHORES PRÁTICAS**
+# DICAS E MELHORES PRÁTICAS
 
 ## **Dicas de Implementação**
 
@@ -473,7 +473,7 @@ O Gleipnir já tem **tudo o que você precisa**:
 
 ---
 
-# **🚨 SOLUÇÃO DE PROBLEMAS COMUNS**
+# SOLUÇÃO DE PROBLEMAS COMUNS
 
 ## **Problema: "Undefined: deterministicMode"**
 
@@ -527,15 +527,15 @@ go mod download
 
 ---
 
-# **📚 RECURSOS ADICIONAIS**
+# RECURSOS ADICIONAIS
 
 ## **Documentação de Referência**
 
-1. **3CP v2.0 Specification:** `/workspace/github__had-nu__3CP/spec/SPEC-3CP-V2.md`
+1. **3CP v2.0 Specification:** https://github.com/had-nu/3CP (`spec/SPEC-3CP-V2.md`)
    - Todos os requisitos do protocolo
    - Seções relevantes: §4 (Criptografia), §5 (Blocos), §6 (Consenso), §8 (Key Rotation), §9 (SMT), §12 (Light Client), §13 (Mandates)
 
-2. **Gleipnir Codebase:** `/workspace/github__had-nu__gleipnir/`
+2. **Gleipnir Codebase:** https://github.com/had-nu/gleipnir
    - Código existente para referência
    - Arquivos importantes: `pkg/identity/`, `pkg/chain/`, `pkg/consensus/`, `pkg/smt/`
 
@@ -557,7 +557,7 @@ go mod download
 
 ---
 
-# **🎉 CONCLUSÃO**
+# CONCLUSÃO
 
 **Você está a apenas 5-10 dias de 100% compliance com 3CP v2.0!**
 
@@ -582,8 +582,8 @@ go mod download
 
 ---
 
-**Boa sorte!** 🚀
+**Boa sorte!**
 
 **Documento gerado:** 2026-08-25  
 **Autor:** Vibe Code (Mistral AI)  
-**Status:** ✅ **Pronto para uso com OpenCode**
+**Status:**  **Pronto para uso com OpenCode**

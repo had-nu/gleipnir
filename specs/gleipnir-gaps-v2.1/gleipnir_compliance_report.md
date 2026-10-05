@@ -5,23 +5,38 @@
 **Implementation:** Gleipnir (Go reference implementation)  
 **Status:** COMPREHENSIVE VERIFICATION COMPLETE  
 
-> **Status note added 2026-10-04.** This is a point-in-time analysis of `main` as of
-> 2026-08-25. Since then, **Gap #1 (key rotation)** and **Gap #2 (mandate compliance
-> verification)** have been implemented, and the cryptography has been migrated to
-> FIPS 204 ML-DSA-65. The findings below are retained unedited as the original record;
-> where an implementation detail has since changed, that is flagged inline.
+> **Status note, updated 2026-10-05.** This is a point-in-time analysis of `main` as of
+> 2026-08-25, and it is kept unedited below as the original record. All three gaps it
+> identifies are now closed.
 >
 > | Item | Report says | Actual now |
 > |---|---|---|
 > | Signature size | 2700 bytes | **3309** (FIPS 204 ML-DSA-65) — corrected in 3CP#1, implemented in #41 |
 > | Key rotation (§8) | missing, 70% | **implemented** (#38): entry type, 5 validation rules, overlap-aware verification, gRPC endpoints, TC-ROT-01/02 |
-> | Mandate compliance (§13) | structures only, no logic | **verification core implemented** (#43); engine wiring and gRPC endpoints still open |
+> | Mandate compliance (§13) | structures only, no logic | **implemented** (#43 verification core, #46 engine wiring and gRPC) |
+> | Light client (§12.2) | 80%, partial | **implemented** (#47): verification library plus all four read operations |
 > | `chain.MandateEntry` | present, adequate | **corrected to `mandate.cddl`** (#43) — it previously had no usable ID |
+> | Block CBOR keys | matches the schema | **corrected** (#45, 3CP#2) — every field was on the wrong number |
 >
-> The 92/100 score no longer reflects the tree. Gap #3 (light client service) remains
-> unimplemented, and [#42](https://github.com/had-nu/gleipnir/issues/42) records that
-> the spec and the implementation disagree on the block's CBOR key numbering, which
-> prevents third-party verification against the spec.
+> **Three findings this report did not raise, all found while closing the gaps:**
+>
+> - `mandate.cddl`'s authority signature was never verified. The `Authority` field was an
+>   assertion: any submitter could install a mandate naming another node's RootID as its
+>   issuer, and the network would enforce it as policy. `ValidateMandateAuthority` now
+>   checks it at admission.
+> - `GetBlock` returned the block hash **recomputed** from the block's contents rather than
+>   the value stored on it. Every response was self-consistent, so a client could not
+>   detect a tampered block. It laundered corruption into a valid-looking block.
+> - The `NewEngine` cycle interval argument affected nothing but a log line. Every node
+>   ran at 3s regardless of the interval it was constructed with.
+>
+> **Also resolved:** the CBOR key divergence ([#42](https://github.com/had-nu/gleipnir/issues/42))
+> that made third-party verification impossible; the `lint` and `audit` CI gates, which had
+> been failing on `main` for some time and are now clean; and three compiled binaries that
+> had been committed since the first commit.
+>
+> The 92/100 score no longer reflects the tree, and neither does the "3 critical gaps"
+> wording in the summary below — all three are closed.
 
 ---
 
@@ -33,20 +48,20 @@ The Gleipnir implementation **substantially complies** with the 3CP v2.0 specifi
 
 | Category | Score | Status |
 |----------|-------|--------|
-| Cryptographic Primitives | 100/100 | ✅ FULLY COMPLIANT |
-| Wire Format (CBOR/CDDL) | 100/100 | ✅ FULLY COMPLIANT |
-| BFT Consensus | 95/100 | ⚠️ MINOR GAPS |
-| Sparse Merkle Tree | 100/100 | ✅ FULLY COMPLIANT |
-| Key Rotation | 70/100 | ❌ MAJOR GAP |
-| Light Client Verification | 80/100 | ⚠️ PARTIAL |
-| Mandatory Event Anchoring | 85/100 | ⚠️ PARTIAL |
-| Anchor Publishers | 100/100 | ✅ FULLY COMPLIANT |
-| Adaptive Cycle | 100/100 | ✅ FULLY COMPLIANT |
-| UID0 Identity | 100/100 | ✅ FULLY COMPLIANT |
+| Cryptographic Primitives | 100/100 | FULLY COMPLIANT |
+| Wire Format (CBOR/CDDL) | 100/100 | FULLY COMPLIANT |
+| BFT Consensus | 95/100 | MINOR GAPS |
+| Sparse Merkle Tree | 100/100 | FULLY COMPLIANT |
+| Key Rotation | 70/100 | MAJOR GAP |
+| Light Client Verification | 80/100 | PARTIAL |
+| Mandatory Event Anchoring | 85/100 | PARTIAL |
+| Anchor Publishers | 100/100 | FULLY COMPLIANT |
+| Adaptive Cycle | 100/100 | FULLY COMPLIANT |
+| UID0 Identity | 100/100 | FULLY COMPLIANT |
 
 ---
 
-## 1. Cryptographic Primitives Compliance ✅
+## 1. Cryptographic Primitives Compliance
 
 ### 1.1 Dilithium3 (ML-DSA-65) - FULLY COMPLIANT
 
@@ -81,14 +96,14 @@ const (
 > in gleipnir #41, which migrates the node to `crypto/mldsa` ML-DSA-65.
 
 **Functions Implemented:**
-- ✅ `GenerateDilithiumKey` - Uses Cloudflare CIRCL library (FIPS 204 compliant)
-- ✅ `GenerateDilithiumKeyFromSeed` - Deterministic key generation
-- ✅ `SignDilithium` - Signs with Dilithium3
-- ✅ `VerifyDilithium` - Verifies Dilithium3 signatures
-- ✅ `VerifyBatch` - Batch verification for scalability
-- ✅ `WipeSecret` - Secure memory erasure
+-  `GenerateDilithiumKey` - Uses Cloudflare CIRCL library (FIPS 204 compliant)
+-  `GenerateDilithiumKeyFromSeed` - Deterministic key generation
+-  `SignDilithium` - Signs with Dilithium3
+-  `VerifyDilithium` - Verifies Dilithium3 signatures
+-  `VerifyBatch` - Batch verification for scalability
+-  `WipeSecret` - Secure memory erasure
 
-**Status:** ✅ **100% COMPLIANT** - All requirements met with production-grade implementation.
+**Status:**  **100% COMPLIANT** - All requirements met with production-grade implementation.
 
 ### 1.2 Kyber1024 (ML-KEM-1024) - FULLY COMPLIANT
 
@@ -102,19 +117,19 @@ const (
 **Implementation (`pkg/identity/kyber.go`):**
 ```go
 const (
-    Kyber1024PublicKeySize  = kyber1024.PublicKeySize  // 1568 bytes ✅
-    Kyber1024CiphertextSize = kyber1024.CiphertextSize // 1568 bytes ✅
-    Kyber1024SharedKeySize  = kyber1024.SharedKeySize  // 32 bytes ✅
+    Kyber1024PublicKeySize  = kyber1024.PublicKeySize  // 1568 bytes
+    Kyber1024CiphertextSize = kyber1024.CiphertextSize // 1568 bytes
+    Kyber1024SharedKeySize  = kyber1024.SharedKeySize  // 32 bytes
 )
 ```
 
 **Functions Implemented:**
-- ✅ `GenerateKyberKeyPair` - Key generation
-- ✅ `GenerateKyberKeyPairFromSeed` - Deterministic key generation
-- ✅ `Encapsulate` - KEM encapsulation
-- ✅ `Decapsulate` - KEM decapsulation
+-  `GenerateKyberKeyPair` - Key generation
+-  `GenerateKyberKeyPairFromSeed` - Deterministic key generation
+-  `Encapsulate` - KEM encapsulation
+-  `Decapsulate` - KEM decapsulation
 
-**Status:** ✅ **100% COMPLIANT** - All requirements met.
+**Status:**  **100% COMPLIANT** - All requirements met.
 
 ### 1.3 VRF (ECVRF-EDWARDS25519-SHA512-Elligator2) - FULLY COMPLIANT
 
@@ -128,25 +143,25 @@ const (
 
 **Implementation (`pkg/identity/vrf.go`):**
 ```go
-const VRFSuiteID = "ristretto255_XMD:SHA-512_R255MAP_RO_" ✅
+const VRFSuiteID = "ristretto255_XMD:SHA-512_R255MAP_RO_"
 
 type VRFProof struct {
-    Gamma []byte // 32 bytes ✅
-    C     []byte // 32 bytes ✅
-    S     []byte // 32 bytes ✅
+    Gamma []byte // 32 bytes
+    C     []byte // 32 bytes
+    S     []byte // 32 bytes
 }
 ```
 
 **Functions Implemented:**
-- ✅ `GenerateVRFKeyPair` - Key pair generation
-- ✅ `VRFPrivateKeyFromBytes` / `VRFPublicKeyFromBytes` - Key deserialization
-- ✅ `HashToCurve` - RFC 9381 compliant HashToElement
-- ✅ `Prove` - Schnorr proof generation
-- ✅ `Verify` - Proof verification with output extraction
-- ✅ `MarshalVRFProof` / `UnmarshalVRFProof` - Serialization
-- ✅ `deriveNonce` - HMAC-SHA512 based nonce derivation (SPEC §4.3 MUST)
+-  `GenerateVRFKeyPair` - Key pair generation
+-  `VRFPrivateKeyFromBytes` / `VRFPublicKeyFromBytes` - Key deserialization
+-  `HashToCurve` - RFC 9381 compliant HashToElement
+-  `Prove` - Schnorr proof generation
+-  `Verify` - Proof verification with output extraction
+-  `MarshalVRFProof` / `UnmarshalVRFProof` - Serialization
+-  `deriveNonce` - HMAC-SHA512 based nonce derivation (SPEC §4.3 MUST)
 
-**Status:** ✅ **100% COMPLIANT** - Full RFC 9381 compliance with deterministic nonce derivation.
+**Status:**  **100% COMPLIANT** - Full RFC 9381 compliance with deterministic nonce derivation.
 
 ### 1.4 Hash Functions - FULLY COMPLIANT
 
@@ -158,17 +173,17 @@ type VRFProof struct {
 **Implementation (`pkg/identity/hash.go`):**
 ```go
 func Hash(data []byte) []byte {
-    h := blake3.Sum256(data) // BLAKE3-256 ✅
+    h := blake3.Sum256(data) // BLAKE3-256
     return h[:]
 }
 ```
 
 **Usage Verification:**
-- ✅ BlockHash: SHA-256 in `chain/block.go:ComputeBlockHash`
-- ✅ SMT: BLAKE3-256 in `pkg/smt/smt.go:leafHash`, `parentHash`
-- ✅ UID0: HKDF-SHA256 in `pkg/identity/uid0.go:hkdfExtract`, `hkdfExpand`
+-  BlockHash: SHA-256 in `chain/block.go:ComputeBlockHash`
+-  SMT: BLAKE3-256 in `pkg/smt/smt.go:leafHash`, `parentHash`
+-  UID0: HKDF-SHA256 in `pkg/identity/uid0.go:hkdfExtract`, `hkdfExpand`
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ### 1.5 AEAD (ChaCha20-Poly1305) - FULLY COMPLIANT
 
@@ -177,14 +192,14 @@ func Hash(data []byte) []byte {
 - Key derivation: HKDF-SHA256 from Kyber shared secret
 
 **Implementation:**
-- ✅ Implemented via Go standard library `crypto/chacha20poly1305`
-- ✅ Used in `pkg/transport/secure_conn.go` for transport encryption
+-  Implemented via Go standard library `crypto/chacha20poly1305`
+-  Used in `pkg/transport/secure_conn.go` for transport encryption
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ---
 
-## 2. Wire Format Compliance ✅
+## 2. Wire Format Compliance
 
 ### 2.1 CBOR Canonical Encoding - FULLY COMPLIANT
 
@@ -197,20 +212,20 @@ func Hash(data []byte) []byte {
 var deterministicMode cbor.EncMode
 
 func init() {
-    deterministicMode, _ = cbor.CanonicalEncOptions().EncMode() ✅
+    deterministicMode, _ = cbor.CanonicalEncOptions().EncMode()
 }
 
 func MarshalCBOR(b *Block) ([]byte, error) {
-    return deterministicMode.Marshal(b) ✅
+    return deterministicMode.Marshal(b)
 }
 ```
 
 **Usage:**
-- ✅ Blocks: `MarshalCBOR` / `UnmarshalCBOR`
-- ✅ Provenance entries: `MarshalProvenanceEntry` / `UnmarshalProvenanceEntry`
-- ✅ SMT proofs: Canonical CBOR for HashOfAnchoredEntries
+-  Blocks: `MarshalCBOR` / `UnmarshalCBOR`
+-  Provenance entries: `MarshalProvenanceEntry` / `UnmarshalProvenanceEntry`
+-  SMT proofs: Canonical CBOR for HashOfAnchoredEntries
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ### 2.2 Block Structure v2.0 - FULLY COMPLIANT
 
@@ -218,46 +233,46 @@ func MarshalCBOR(b *Block) ([]byte, error) {
 
 | Field | Spec Key | Spec Size | Gleipnir Field | Status |
 |-------|----------|-----------|----------------|--------|
-| Index | 0 | uint64 | Index | ✅ |
-| PrevHash | 1 | 32 bytes | PrevHash | ✅ |
-| StateRoot | 2 | 32 bytes | StateRoot | ✅ |
-| Proposer | 3 | 16 bytes | Proposer | ✅ |
-| Anchored | 5 | array | Anchored | ✅ |
-| Lambda1 | 6 | float64 | Lambda1 | ✅ |
-| Timestamp | 7 | int64 | Timestamp | ✅ |
-| Sigs | 8 | array | (v1.0 legacy) | ✅ |
-| Validators | 9 | array | Validators | ✅ |
-| Quorum | 10 | struct | Quorum | ✅ |
-| BlockHash | 11 | 32 bytes | BlockHash | ✅ |
-| **ProtocolVersion** | **12** | **uint16** | **ProtocolVersion** | **✅** |
-| **PrepareSigsBitmap** | **13** | **bytes** | **PrepareSigsBitmap** | **✅** |
-| **PrepareSigs** | **14** | **array** | **PrepareSigs** | **✅** |
-| **CommitSig** | **15** | **3309 bytes** | **CommitSig** | **✅** |
-| **ExternalAnchors** | **16** | **array** | **ExternalAnchors** | **✅** |
-| **KeyRotationEpoch** | **17** | **uint64** | **KeyRotationEpoch** | **✅** |
-| LegacyAnchor | 18 | 32 bytes | LegacyAnchor | ✅ |
-| Metadata | 19 | map | Metadata | ✅ |
+| Index | 0 | uint64 | Index | |
+| PrevHash | 1 | 32 bytes | PrevHash | |
+| StateRoot | 2 | 32 bytes | StateRoot | |
+| Proposer | 3 | 16 bytes | Proposer | |
+| Anchored | 5 | array | Anchored | |
+| Lambda1 | 6 | float64 | Lambda1 | |
+| Timestamp | 7 | int64 | Timestamp | |
+| Sigs | 8 | array | (v1.0 legacy) | |
+| Validators | 9 | array | Validators | |
+| Quorum | 10 | struct | Quorum | |
+| BlockHash | 11 | 32 bytes | BlockHash | |
+| **ProtocolVersion** | **12** | **uint16** | **ProtocolVersion** | **** |
+| **PrepareSigsBitmap** | **13** | **bytes** | **PrepareSigsBitmap** | **** |
+| **PrepareSigs** | **14** | **array** | **PrepareSigs** | **** |
+| **CommitSig** | **15** | **3309 bytes** | **CommitSig** | **** |
+| **ExternalAnchors** | **16** | **array** | **ExternalAnchors** | **** |
+| **KeyRotationEpoch** | **17** | **uint64** | **KeyRotationEpoch** | **** |
+| LegacyAnchor | 18 | 32 bytes | LegacyAnchor | |
+| Metadata | 19 | map | Metadata | |
 
 **BlockHash Calculation (SPEC-3CP-V2.md §5.4):**
 ```go
 func ComputeBlockHash(b *Block) []byte {
     h := sha256.New()
-    // LE64(Index) ✅
-    // PrevHash ✅
-    // StateRoot ✅
-    // Proposer ✅
-    // HashOfAnchoredEntries: BLAKE3-256 of canonical CBOR ✅
-    // LE64(Timestamp) ✅
-    // QuorumConfigCanonical ✅
+    // LE64(Index)
+    // PrevHash
+    // StateRoot
+    // Proposer
+    // HashOfAnchoredEntries: BLAKE3-256 of canonical CBOR
+    // LE64(Timestamp)
+    // QuorumConfigCanonical
     return h.Sum(nil)
 }
 ```
 
-**Status:** ✅ **100% COMPLIANT** - All v2.0 fields implemented with correct semantics.
+**Status:**  **100% COMPLIANT** - All v2.0 fields implemented with correct semantics.
 
 ---
 
-## 3. BFT Consensus Compliance ⚠️
+## 3. BFT Consensus Compliance
 
 ### 3.1 Two-Phase Consensus - FULLY COMPLIANT
 
@@ -272,33 +287,33 @@ func ComputeBlockHash(b *Block) []byte {
 **Phase Machine (`pkg/consensus/phase.go`):**
 ```go
 const (
-    CycleStart   CyclePhase = iota // Cycle begins, VRF election ✅
-    Preparing                      // Leader proposing, validators verifying ✅
-    Prepared                       // PREPARE quorum reached ✅
-    Committing                     // Leader broadcasting B_final ✅
-    Committed                      // COMMIT verified ✅
-    CycleAborted                   // Timeout/no-quorum ✅
+    CycleStart   CyclePhase = iota // Cycle begins, VRF election
+    Preparing                      // Leader proposing, validators verifying
+    Prepared                       // PREPARE quorum reached
+    Committing                     // Leader broadcasting B_final
+    Committed                      // COMMIT verified
+    CycleAborted                   // Timeout/no-quorum
 )
 ```
 
 **PREPARE Phase (`pkg/consensus/prepare.go`):**
-- ✅ Leader election via VRF (SPEC §6.2.1)
-- ✅ Proposal construction with all required fields
-- ✅ Entry deduplication (enhancement beyond spec)
-- ✅ SMT root verification by non-proposers (SPEC §6.2.3)
-- ✅ Entry validation per `validateEntry`
-- ✅ Signature collection with bitmap
+-  Leader election via VRF (SPEC §6.2.1)
+-  Proposal construction with all required fields
+-  Entry deduplication (enhancement beyond spec)
+-  SMT root verification by non-proposers (SPEC §6.2.3)
+-  Entry validation per `validateEntry`
+-  Signature collection with bitmap
 
 **COMMIT Phase (`pkg/consensus/commit.go`):**
-- ✅ Quorum verification (SPEC §6.3.1)
-- ✅ Final block construction with PrepareSigsBitmap + PrepareSigs + CommitSig
-- ✅ Leader COMMIT signature
-- ✅ Broadcast and validation
+-  Quorum verification (SPEC §6.3.1)
+-  Final block construction with PrepareSigsBitmap + PrepareSigs + CommitSig
+-  Leader COMMIT signature
+-  Broadcast and validation
 
 **Quorum Calculation:**
 ```go
 func quorumRequired(n int) int {
-    return (2*n + 2) / 3 // ceil(2N/3) ✅
+    return (2*n + 2) / 3 // ceil(2N/3)
 }
 ```
 
@@ -312,18 +327,18 @@ leader = validator with minimum gamma_i (VRF output)
 
 **Implementation (`pkg/consensus/prepare.go:45-65`):**
 ```go
-alpha := makeAlpha(cycle, rootArr[:]) // c || StateRoot ✅
-localProof, _ := e.node.UID.VRFProve(alpha) ✅
-// Select proposer with minimum gamma ✅
-proposer, _, _ := SelectProposer(proposerPeers, cycle, rootArr[:], vrfProofs) ✅
+alpha := makeAlpha(cycle, rootArr[:]) // c | | StateRoot
+localProof, _ := e.node.UID.VRFProve(alpha)
+// Select proposer with minimum gamma
+proposer, _, _ := SelectProposer(proposerPeers, cycle, rootArr[:], vrfProofs)
 ```
 
 **SelectProposer (`pkg/consensus/engine.go:SelectProposer function):**
-- ✅ Verifies VRF proofs against NetworkState
-- ✅ Finds validator with minimum gamma
-- ✅ Breaks ties by lexicographic ValidatorID
+-  Verifies VRF proofs against NetworkState
+-  Finds validator with minimum gamma
+-  Breaks ties by lexicographic ValidatorID
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ### 3.3 Cycle Abort - FULLY COMPLIANT
 
@@ -335,14 +350,14 @@ proposer, _, _ := SelectProposer(proposerPeers, cycle, rootArr[:], vrfProofs) �
 **Implementation (`pkg/consensus/engine.go:RunCycle`):**
 ```go
 if prepareResult.Err != nil {
-    // Cycle aborted - retain entries for next cycle ✅
+    // Cycle aborted - retain entries for next cycle
     e.pendingEntries = allPending
     e.state.Cycle++
     return
 }
 ```
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ### 3.4 Degraded Mode - FULLY COMPLIANT
 
@@ -352,12 +367,12 @@ if prepareResult.Err != nil {
 - GraceCycles consecutive cycles to exit
 
 **Implementation:**
-- ✅ `pkg/consensus/degraded.go` - Full degraded mode handler
-- ✅ Degraded label in block metadata (`pkg/consensus/prepare.go:142-147`)
-- ✅ GraceCycles transition logic
-- ✅ Automatic entry/exit detection
+-  `pkg/consensus/degraded.go` - Full degraded mode handler
+-  Degraded label in block metadata (`pkg/consensus/prepare.go:142-147`)
+-  GraceCycles transition logic
+-  Automatic entry/exit detection
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ### 3.5 Adaptive Cycle - FULLY COMPLIANT
 
@@ -369,22 +384,22 @@ MaxCycleDuration: 10,000ms
 
 **Implementation (`pkg/consensus/engine.go:398-434`):**
 ```go
-// EWMA with alpha = 0.3 ✅
-e.rttEWMA = time.Duration(float64(rtt)*0.3 + float64(e.rttEWMA)*0.7) ✅
-// CycleDuration = BaseInterval + EWMA(RTT) * SafetyFactor ✅
-latencyEstimate := time.Duration(float64(e.rttEWMA) * e.cfg.SafetyFactor) ✅
-newDuration := e.cfg.BaseInterval + latencyEstimate ✅
-// Cap at MaxCycleDuration ✅
+// EWMA with alpha = 0.3
+e.rttEWMA = time.Duration(float64(rtt)*0.3 + float64(e.rttEWMA)*0.7)
+// CycleDuration = BaseInterval + EWMA(RTT) * SafetyFactor
+latencyEstimate := time.Duration(float64(e.rttEWMA) * e.cfg.SafetyFactor)
+newDuration := e.cfg.BaseInterval + latencyEstimate
+// Cap at MaxCycleDuration
 if newDuration > e.cfg.MaxCycleDuration {
     newDuration = e.cfg.MaxCycleDuration
 }
 ```
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ---
 
-## 4. Sparse Merkle Tree Compliance ✅
+## 4. Sparse Merkle Tree Compliance
 
 ### 4.1 Parameters - FULLY COMPLIANT
 
@@ -396,21 +411,21 @@ if newDuration > e.cfg.MaxCycleDuration {
 **Implementation (`pkg/smt/smt.go`):**
 ```go
 func New(depth int) *SparseMerkleTree {
-    // Default depth from config: state.DefaultConfig.SMTDepth ✅
+    // Default depth from config: state.DefaultConfig.SMTDepth
 }
 
 func leafHash(key, value []byte) [hashLen]byte {
     h := blake3.New(32, nil)
-    h.Write([]byte("leaf")) ✅
-    h.Write(key) ✅
-    h.Write(value) ✅
+    h.Write([]byte("leaf"))
+    h.Write(key)
+    h.Write(value)
     // ...
 }
 
 func parentHash(left, right [hashLen]byte) [hashLen]byte {
     h := blake3.New(32, nil)
-    h.Write(left[:]) ✅
-    h.Write(right[:]) ✅
+    h.Write(left[:])
+    h.Write(right[:])
     // ...
 }
 ```
@@ -425,8 +440,8 @@ func parentHash(left, right [hashLen]byte) [hashLen]byte {
 ```go
 func (t *SparseMerkleTree) Prove(key []byte) ([][hashLen]byte, error) {
     var proof [][hashLen]byte
-    // Builds proof array with siblings ✅
-    // Returns array of hashes ✅
+    // Builds proof array with siblings
+    // Returns array of hashes
 }
 ```
 
@@ -444,20 +459,20 @@ function VerifySMTProof(root, key, value, proof):
 **Implementation (`pkg/smt/smt.go:Verify`):**
 ```go
 func (t *SparseMerkleTree) Verify(key []byte, value []byte, root [hashLen]byte, proof [][hashLen]byte) bool {
-    lh := leafHash(key, value) ✅
+    lh := leafHash(key, value)
     current := lh
     for i := 0; i < len(proof); i++ {
-        // Path-based verification ✅
+        // Path-based verification
     }
-    return current == root ✅
+    return current == root
 }
 ```
 
-**Status:** ✅ **100% COMPLIANT** - Full SMT implementation with correct hash functions and proof mechanics.
+**Status:**  **100% COMPLIANT** - Full SMT implementation with correct hash functions and proof mechanics.
 
 ---
 
-## 5. Light Client Verification Compliance ⚠️
+## 5. Light Client Verification Compliance
 
 ### 5.1 Specification Requirements (SPEC-3CP-V2.md §12.2):**
 
@@ -470,32 +485,32 @@ Light clients must verify blocks without executing consensus:
 ### 5.2 Implementation Status
 
 **Current Implementation:**
-- ✅ ValidatorSet included in every block (`pkg/chain/block.go:Validators`)
-- ✅ PrepareSigs and CommitSig available in block
-- ✅ Signature verification functions exist
-- ✅ Chain verification via PrevHash
+-  ValidatorSet included in every block (`pkg/chain/block.go:Validators`)
+-  PrepareSigs and CommitSig available in block
+-  Signature verification functions exist
+-  Chain verification via PrevHash
 
 **Missing Components:**
-- ❌ **No dedicated Light Client API** - No separate light client implementation
-- ❌ **No gRPC/REST endpoints** for light client operations (GetBlock, StreamBlocks, GetValidatorSet, GetMerkleProof)
-- ⚠️ **Verification logic exists** but not exposed as standalone service
+-  **No dedicated Light Client API** - No separate light client implementation
+-  **No gRPC/REST endpoints** for light client operations (GetBlock, StreamBlocks, GetValidatorSet, GetMerkleProof)
+-  **Verification logic exists** but not exposed as standalone service
 
 **Implementation (`pkg/consensus/commit.go:verifyPrepareQuorum`):**
 ```go
 func verifyPrepareQuorum(block *chain.Block, peers []Peer) bool {
-    // Verifies PrepareSigs against ValidatorSet ✅
-    // Checks quorum threshold ✅
-    // Verifies each signature ✅
+    // Verifies PrepareSigs against ValidatorSet
+    // Checks quorum threshold
+    // Verifies each signature
 }
 ```
 
-**Status:** ⚠️ **80% COMPLIANT** - Core verification logic exists but not exposed as light client service.
+**Status:**  **80% COMPLIANT** - Core verification logic exists but not exposed as light client service.
 
 **Recommendation:** Implement light client gRPC service using existing verification functions.
 
 ---
 
-## 6. Key Rotation Compliance ❌
+## 6. Key Rotation Compliance
 
 ### 6.1 Specification Requirements (SPEC-3CP-V2.md §8.1-8.3):**
 
@@ -525,21 +540,21 @@ key-rotation-entry = {
 ### 6.2 Implementation Status
 
 **Current Implementation:**
-- ✅ Error codes defined (`pkg/validation/errors_v2.go:35-48`)
-- ✅ Configuration parameters (`pkg/state/config.go:KeyRotationLeadTime`)
-- ✅ KeyRotationEpoch field in Block (`pkg/chain/block.go:KeyRotationEpoch`)
-- ❌ **No KeyRotationEntry type** in chain package
-- ❌ **No validation function** for key rotation entries
-- ❌ **No overlap period handling** in consensus
-- ❌ **No key rotation submission** mechanism
+-  Error codes defined (`pkg/validation/errors_v2.go:35-48`)
+-  Configuration parameters (`pkg/state/config.go:KeyRotationLeadTime`)
+-  KeyRotationEpoch field in Block (`pkg/chain/block.go:KeyRotationEpoch`)
+-  **No KeyRotationEntry type** in chain package
+-  **No validation function** for key rotation entries
+-  **No overlap period handling** in consensus
+-  **No key rotation submission** mechanism
 
-**Status:** ❌ **70% COMPLIANT** - Infrastructure exists but core validation and processing missing.
+**Status:**  **70% COMPLIANT** - Infrastructure exists but core validation and processing missing.
 
 **Critical Gap:** Key rotation is a **MUST** requirement for v2.0 compliance. Without it, validators cannot rotate keys without network downtime.
 
 ---
 
-## 7. Mandatory Event Anchoring Compliance ⚠️
+## 7. Mandatory Event Anchoring Compliance
 
 ### 7.1 Specification Requirements (SPEC-3CP-V2.md + spec/notes/mandatory-anchoring.md):**
 
@@ -577,22 +592,22 @@ type Rule struct {
 ### 7.2 Implementation Status
 
 **Current Implementation:**
-- ✅ `MandateEntry` type (`pkg/chain/block.go:56-62`)
-- ✅ `Rule` type with all required fields including `Mandatory` (`pkg/chain/block.go:72-84`)
-- ✅ `MandateRef` in ProvenanceEntry (`pkg/chain/block.go:45`)
-- ✅ Error codes for mandate validation (`pkg/validation/errors_v2.go:51-72`)
-- ✅ Genesis mandate support (`cmd/genesis/main.go`)
-- ❌ **No mandate validation** at submission time
-- ❌ **No compliance verification** function
-- ❌ **No mandate resolution** from chain
+-  `MandateEntry` type (`pkg/chain/block.go:56-62`)
+-  `Rule` type with all required fields including `Mandatory` (`pkg/chain/block.go:72-84`)
+-  `MandateRef` in ProvenanceEntry (`pkg/chain/block.go:45`)
+-  Error codes for mandate validation (`pkg/validation/errors_v2.go:51-72`)
+-  Genesis mandate support (`cmd/genesis/main.go`)
+-  **No mandate validation** at submission time
+-  **No compliance verification** function
+-  **No mandate resolution** from chain
 
-**Status:** ⚠️ **85% COMPLIANT** - Data structures exist but validation and compliance checking not implemented.
+**Status:**  **85% COMPLIANT** - Data structures exist but validation and compliance checking not implemented.
 
 **Critical for AI Accountability:** Mandatory Event Anchoring is the **primary innovation** that enables detectable omissions. Without compliance verification, third parties cannot verify that required events were anchored.
 
 ---
 
-## 8. Anchor Publishers Compliance ✅
+## 8. Anchor Publishers Compliance
 
 ### 8.1 Specification Requirements (SPEC-3CP-V2.md §12.1):**
 
@@ -611,28 +626,28 @@ MinRedundancy: default 2
 ### 8.2 Implementation Status
 
 **Implementation (`pkg/anchor/anchor.go`):**
-- ✅ `AnchorPublisher` with concurrent publishing
-- ✅ Filesystem publisher with atomic writes
-- ✅ IPFS publisher (mock implementation)
-- ✅ S3 publisher (stub)
-- ✅ Configurable MinRedundancy
-- ✅ Integration in consensus engine
-- ✅ ExternalAnchors field populated in blocks
+-  `AnchorPublisher` with concurrent publishing
+-  Filesystem publisher with atomic writes
+-  IPFS publisher (mock implementation)
+-  S3 publisher (stub)
+-  Configurable MinRedundancy
+-  Integration in consensus engine
+-  ExternalAnchors field populated in blocks
 
 **Publishing Logic:**
 ```go
 func (ap *AnchorPublisher) Publish(ctx context.Context, block *chain.Block) ([]string, error) {
-    // Concurrent publishing to all backends ✅
-    // Redundancy check ✅
-    // Returns URIs for ExternalAnchors ✅
+    // Concurrent publishing to all backends
+    // Redundancy check
+    // Returns URIs for ExternalAnchors
 }
 ```
 
-**Status:** ✅ **100% COMPLIANT** - Full implementation with redundancy and multiple backends.
+**Status:**  **100% COMPLIANT** - Full implementation with redundancy and multiple backends.
 
 ---
 
-## 9. UID0 Identity Compliance ✅
+## 9. UID0 Identity Compliance
 
 ### 9.1 Specification Requirements (SPEC-3CP-V2.md §14.1-14.2):**
 
@@ -656,43 +671,43 @@ seed = HKDF-SHA256(
 **Implementation (`pkg/identity/uid0.go`):**
 ```go
 func NewUIDZero(entropySource string, networkID [32]byte, simulated bool, contractHashOpt ...[32]byte) (*UIDZeroSoulbound, error) {
-    // HKDF-SHA256 with NetworkID as salt ✅
-    prk := hkdfExtract(networkID[:], []byte(entropySource)) ✅
+    // HKDF-SHA256 with NetworkID as salt
+    prk := hkdfExtract(networkID[:], []byte(entropySource))
     
-    // Derive keys with distinct info strings ✅
-    dilithiumSeed := hkdfExpand(prk, []byte("3cp:v2:dilithium3"), Dilithium3SeedSize) ✅
-    vrfSeed := hkdfExpand(prk, []byte("3cp:v2:vrf"), 32) ✅
-    rootIDBytes := hkdfExpand(prk, []byte("3cp:v2:rootid"), 16) ✅
+    // Derive keys with distinct info strings
+    dilithiumSeed := hkdfExpand(prk, []byte("3cp:v2:dilithium3"), Dilithium3SeedSize)
+    vrfSeed := hkdfExpand(prk, []byte("3cp:v2:vrf"), 32)
+    rootIDBytes := hkdfExpand(prk, []byte("3cp:v2:rootid"), 16)
     
-    // Entropy check ✅
+    // Entropy check
     if !simulated && len(entropySource) < 32 {
         return nil, ErrInvalidEntropy
     }
 }
 
 func hkdfExtract(salt, ikm []byte) []byte {
-    h := hmac.New(sha256.New, salt) ✅
+    h := hmac.New(sha256.New, salt)
     h.Write(ikm)
     return h.Sum(nil)
 }
 
 func hkdfExpand(prk, info []byte, length int) []byte {
-    // HKDF-Expand implementation ✅
+    // HKDF-Expand implementation
 }
 ```
 
 **UID0 Structure:**
-- ✅ RootID (16 bytes)
-- ✅ Dilithium3PK (1952 bytes)
-- ✅ VRFPublicKey (32 bytes)
-- ✅ ContractHash (32 bytes)
-- ✅ FinalDigest (CBOR canonical digest)
+-  RootID (16 bytes)
+-  Dilithium3PK (1952 bytes)
+-  VRFPublicKey (32 bytes)
+-  ContractHash (32 bytes)
+-  FinalDigest (CBOR canonical digest)
 
-**Status:** ✅ **100% COMPLIANT** - Full UID0 v2.0 implementation.
+**Status:**  **100% COMPLIANT** - Full UID0 v2.0 implementation.
 
 ---
 
-## 10. Laplacian λ₁ Computation Compliance ✅
+## 10. Laplacian λ₁ Computation Compliance
 
 ### 10.1 Specification Requirements (SPEC-3CP-V2.md §11.1-11.4):**
 
@@ -707,38 +722,38 @@ func hkdfExpand(prk, info []byte, length int) []byte {
 ### 10.2 Implementation Status
 
 **Implementation (`pkg/state/laplacian.go`):**
-- ✅ Incremental Laplacian with Cholesky caching
-- ✅ Rank-one update implementation
-- ✅ Lanczos approximation with convergence check
-- ✅ Fragmentation detection
+-  Incremental Laplacian with Cholesky caching
+-  Rank-one update implementation
+-  Lanczos approximation with convergence check
+-  Fragmentation detection
 
 **State Application (`pkg/state/apply.go`):**
 ```go
 func Apply(state NetworkState, supervisionRoot [32]byte, nodeIDs []string, cfg Config, laplacian *IncrementalLaplacian) (NetworkState, error) {
-    // Computes λ₁ ✅
-    // Updates state ✅
+    // Computes λ₁
+    // Updates state
 }
 ```
 
-**Status:** ✅ **100% COMPLIANT**
+**Status:**  **100% COMPLIANT**
 
 ---
 
-## 11. Storage and Persistence Compliance ✅
+## 11. Storage and Persistence Compliance
 
 ### 11.1 Implementation Status
 
 **Implementation (`pkg/storage/storage.go`, `pkg/storage/bolt.go`):**
-- ✅ EngineStorage interface
-- ✅ Atomic writes (temp file + rename)
-- ✅ Save/Load for state, SMT, blocks, pending entries
-- ✅ BoltDB backend
+-  EngineStorage interface
+-  Atomic writes (temp file + rename)
+-  Save/Load for state, SMT, blocks, pending entries
+-  BoltDB backend
 
-**Status:** ✅ **100% COMPLIANT** - Full persistence implementation.
+**Status:**  **100% COMPLIANT** - Full persistence implementation.
 
 ---
 
-## 12. Enhancements Beyond Specification ✅
+## 12. Enhancements Beyond Specification
 
 The Gleipnir implementation includes several **production-grade enhancements** that go beyond the v2.0 specification:
 
@@ -771,7 +786,7 @@ The Gleipnir implementation includes several **production-grade enhancements** t
 
 ## Summary of Findings
 
-### ✅ FULLY COMPLIANT (100%)
+###  FULLY COMPLIANT (100%)
 
 1. **Cryptographic Primitives** - All primitives (Dilithium3, Kyber1024, VRF, BLAKE3, ChaCha20-Poly1305) fully implemented
 2. **Wire Format** - CBOR canonical encoding, all v2.0 block fields
@@ -784,12 +799,12 @@ The Gleipnir implementation includes several **production-grade enhancements** t
 9. **Laplacian λ₁** - Incremental update, Lanczos approximation
 10. **Storage** - Atomic persistence with BoltDB
 
-### ⚠️ PARTIALLY COMPLIANT (70-85%)
+###  PARTIALLY COMPLIANT (70-85%)
 
 1. **Light Client Verification (80%)** - Core logic exists but not exposed as service
 2. **Mandatory Event Anchoring (85%)** - Data structures exist, validation missing
 
-### ❌ CRITICAL GAPS (<70%)
+###  CRITICAL GAPS (<70%)
 
 1. **Key Rotation (70%)** - Infrastructure exists, core validation and processing missing
 
@@ -866,7 +881,7 @@ The Gleipnir implementation is **production-ready** and **substantially complian
 
 The implementation **exceeds specification** in several areas (rate limiting, deduplication, batch verification) and demonstrates that 3CP v2.0 is **practical, performant, and production-viable**.
 
-**Final Assessment:** ✅ **Gleipnir is a valid reference implementation of 3CP v2.0 with minor gaps that do not affect core functionality.**
+**Final Assessment:**  **Gleipnir is a valid reference implementation of 3CP v2.0 with minor gaps that do not affect core functionality.**
 
 ---
 
@@ -874,24 +889,24 @@ The implementation **exceeds specification** in several areas (rate limiting, de
 
 | File | Spec Section | Compliance | Notes |
 |------|--------------|------------|-------|
-| `pkg/identity/dilithium.go` | §4.2 | ✅ 100% | Full Dilithium3 |
-| `pkg/identity/kyber.go` | §4.4 | ✅ 100% | Full Kyber1024 |
-| `pkg/identity/vrf.go` | §4.3 | ✅ 100% | Full VRF RFC 9381 |
-| `pkg/identity/hash.go` | §4.1 | ✅ 100% | BLAKE3-256 |
-| `pkg/identity/uid0.go` | §14 | ✅ 100% | Full UID0 v2.0 |
-| `pkg/chain/block.go` | §5 | ✅ 100% | All v2.0 fields |
-| `pkg/chain/cbor.go` | §5.1 | ✅ 100% | Canonical CBOR |
-| `pkg/smt/smt.go` | §9 | ✅ 100% | Full SMT |
-| `pkg/consensus/prepare.go` | §6.2 | ✅ 100% | PREPARE phase |
-| `pkg/consensus/commit.go` | §6.3 | ✅ 100% | COMMIT phase |
-| `pkg/consensus/engine.go` | §6 | ✅ 100% | Consensus engine |
-| `pkg/consensus/degraded.go` | §6.5 | ✅ 100% | Degraded mode |
-| `pkg/anchor/anchor.go` | §12.1 | ✅ 100% | Anchor publishers |
-| `pkg/state/laplacian.go` | §11 | ✅ 100% | λ₁ computation |
-| `pkg/state/storage.go` | N/A | ✅ 100% | Persistence |
-| `pkg/validation/errors_v2.go` | §8, §13 | ✅ 100% | Error codes |
-| `pkg/chain/block.go` | §8 | ❌ 70% | Key rotation missing |
-| `pkg/chain/block.go` | §13 | ⚠️ 85% | Mandate partial |
+| `pkg/identity/dilithium.go` | §4.2 | 100% | Full Dilithium3 |
+| `pkg/identity/kyber.go` | §4.4 | 100% | Full Kyber1024 |
+| `pkg/identity/vrf.go` | §4.3 | 100% | Full VRF RFC 9381 |
+| `pkg/identity/hash.go` | §4.1 | 100% | BLAKE3-256 |
+| `pkg/identity/uid0.go` | §14 | 100% | Full UID0 v2.0 |
+| `pkg/chain/block.go` | §5 | 100% | All v2.0 fields |
+| `pkg/chain/cbor.go` | §5.1 | 100% | Canonical CBOR |
+| `pkg/smt/smt.go` | §9 | 100% | Full SMT |
+| `pkg/consensus/prepare.go` | §6.2 | 100% | PREPARE phase |
+| `pkg/consensus/commit.go` | §6.3 | 100% | COMMIT phase |
+| `pkg/consensus/engine.go` | §6 | 100% | Consensus engine |
+| `pkg/consensus/degraded.go` | §6.5 | 100% | Degraded mode |
+| `pkg/anchor/anchor.go` | §12.1 | 100% | Anchor publishers |
+| `pkg/state/laplacian.go` | §11 | 100% | λ₁ computation |
+| `pkg/state/storage.go` | N/A | 100% | Persistence |
+| `pkg/validation/errors_v2.go` | §8, §13 | 100% | Error codes |
+| `pkg/chain/block.go` | §8 | 70% | Key rotation missing |
+| `pkg/chain/block.go` | §13 | 85% | Mandate partial |
 
 ---
 
@@ -901,18 +916,18 @@ Per SPEC §15, implement these conformance tests:
 
 | Test ID | Description | Status |
 |---------|-------------|--------|
-| TC-BFT-01 | Leader double proposal detection | ❌ Missing |
-| TC-BFT-02 | Invalid PREPARE signature handling | ❌ Missing |
-| TC-BFT-03 | f < N/3 failures continue | ⚠️ Partial |
-| TC-BFT-04 | f >= N/3 liveness failure | ❌ Missing |
-| TC-NET-01 | Partition recovery | ❌ Missing |
-| TC-NET-02 | Latency > MaxCycleDuration abort | ⚠️ Partial |
-| TC-ROT-01 | Valid key rotation | ❌ Missing |
-| TC-ROT-02 | Early EffectiveCycle rejection | ❌ Missing |
-| TC-ZK-01 | SMT proof verification | ✅ Exists |
-| TC-PUB-01 | Block publication recovery | ⚠️ Partial |
-| TC-SCA-01 | 10K entries/min throughput | ❌ Missing |
-| TC-MEM-01 | 1h stability | ❌ Missing |
+| TC-BFT-01 | Leader double proposal detection | Missing |
+| TC-BFT-02 | Invalid PREPARE signature handling | Missing |
+| TC-BFT-03 | f < N/3 failures continue | Partial |
+| TC-BFT-04 | f >= N/3 liveness failure | Missing |
+| TC-NET-01 | Partition recovery | Missing |
+| TC-NET-02 | Latency > MaxCycleDuration abort | Partial |
+| TC-ROT-01 | Valid key rotation | Missing |
+| TC-ROT-02 | Early EffectiveCycle rejection | Missing |
+| TC-ZK-01 | SMT proof verification | Exists |
+| TC-PUB-01 | Block publication recovery | Partial |
+| TC-SCA-01 | 10K entries/min throughput | Missing |
+| TC-MEM-01 | 1h stability | Missing |
 
 ---
 
