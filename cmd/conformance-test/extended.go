@@ -114,7 +114,7 @@ func a6DedupAfterAnchor(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 		fail(tc, "-", "Dedup after anchor", time.Since(start), fmt.Sprintf("first submit: %v", err))
 		return
 	}
-ts := time.Now().UnixNano()
+	ts := time.Now().UnixNano()
 	sig := signPayload(uid, hash, uid.RootID, ts, "a6-dup")
 
 	resp, err := raw.SubmitHash(ctx, &pb.SubmitRequest{
@@ -246,14 +246,41 @@ func b5QuorumSigs(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *ident
 		if err != nil || len(b.StateRoot) == 0 {
 			continue
 		}
-		if len(b.Sigs) == 0 && b.Index > 0 {
+
+		// §6.5: below four validators the chain is degraded and any single valid signature
+		// finalises a block, so the threshold is the block's own quorum when it declares a
+		// degraded chain, and ceil(2N/3) otherwise.
+		required := b.Quorum.GetRequiredSigs()
+		if len(b.Validators) >= 4 {
+			required = uint64((2*len(b.Validators) + 2) / 3)
+		}
+
+		if uint64(len(b.PrepareSigs)) < required {
 			fail(tc, "-", "Block signature quorum", time.Since(start),
-				fmt.Sprintf("block[%d] has 0 signatures (height=%d)", i, health.BlockHeight))
+				fmt.Sprintf("block[%d] has %d signatures, %d required (height=%d)",
+					i, len(b.PrepareSigs), required, health.BlockHeight))
+			return
+		}
+
+		// The bitmap and the payload have to describe the same signers: §5.3 compacts the
+		// payload to the signers, so a bitmap claiming more would pass a naive count.
+		bits := 0
+		for _, byt := range b.PrepareSigsBitmap {
+			for bit := 0; bit < 8; bit++ {
+				if byt&(1<<bit) != 0 {
+					bits++
+				}
+			}
+		}
+		if bits != len(b.PrepareSigs) {
+			fail(tc, "-", "Block signature quorum", time.Since(start),
+				fmt.Sprintf("block[%d] bitmap marks %d signers but payload holds %d",
+					i, bits, len(b.PrepareSigs)))
 			return
 		}
 	}
 	pass(tc, "-", "Block signature quorum", time.Since(start),
-		fmt.Sprintf("%d blocks checked (sigs≥0 ok)", health.BlockHeight))
+		fmt.Sprintf("%d blocks checked (sigs and bitmap consistent)", health.BlockHeight))
 }
 
 // ── Category C: Cryptographie Proofs ─────────────────────────────────────
@@ -512,5 +539,3 @@ func e3StateRootChanges(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 	}
 	pass(tc, "-", "State root changes", time.Since(start), "state root unchanged (same block)")
 }
-
-

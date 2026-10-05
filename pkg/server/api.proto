@@ -12,6 +12,11 @@ service ProvenanceAnchor {
   rpc GetHealth(Empty) returns (HealthResponse);
   rpc GetBlock(BlockRequest) returns (Block);
   rpc StreamBlocks(BlockRange) returns (stream Block);
+  // GetValidatorSet and GetMerkleProof are the remaining SPEC §12.2 read operations a
+  // light client needs: the validator set to check signatures against, and proofs that an
+  // entry is in the tree a given block committed to.
+  rpc GetValidatorSet(ValidatorSetRequest) returns (ValidatorSetResponse);
+  rpc GetMerkleProof(MerkleProofRequest) returns (MerkleProofResponse);
   // SubmitKeyRotation rotates this node's validator signing key (SPEC §8).
   rpc SubmitKeyRotation(KeyRotationRequest) returns (KeyRotationResponse);
   // GetActivePublicKey reports which validator keys are authoritative in a cycle,
@@ -130,17 +135,69 @@ message BlockRange {
   uint64 to   = 2;
 }
 
+// ValidatorInfo is one entry of the canonical validator set (SPEC §7.1).
+//
+// The VRFPK and ContractHash are not decoration. §7.2 MUSTs that VRFProof verification
+// uses the peer's VRFPK taken from network state, so a client given only Dilithium3
+// public keys has nowhere to get it and cannot verify a VRF proof at all.
+message ValidatorInfo {
+  bytes validator_id  = 1;
+  bytes dilithium3_pk = 2;  // 1952 bytes
+  bytes vrf_pk        = 3;  // 32 bytes
+  bytes contract_hash = 4;  // 32 bytes
+}
+
+// QuorumConfig carries the block's own statement of how many signatures it needed.
+message QuorumConfig {
+  uint64 total_validators = 1;
+  uint64 required_sigs    = 2;
+}
+
+// Block mirrors spec/schemas/block.cddl.
+//
+// This replaces an earlier, partial message that exposed only the v1-era fields and
+// nothing a v2 client needs. Two of its problems were not merely omissions:
+//
+//   - It had a `sigs` field, which is where v1 kept block signatures without phase
+//     distinction. §5.3 reserves key 8 for ProtocolVersion == 2 and forbids signatures
+//     there, so a client reading `sigs` for PREPARE signatures would be reading a field
+//     the specification says must not exist.
+//   - GetBlock filled `block_hash` by recomputing it from the block's contents. That made
+//     every response self-consistent, so a client could not tell whether the block's
+//     stored hash matched what it was given -- which is precisely the check a light client
+//     performs. The stored value is now returned unchanged and the client verifies.
+//
+// Field numbers are protobuf's own namespace, which forbids zero, so they run
+// sequentially in CBOR key order rather than matching the keys exactly. Each field's
+// comment names the key it corresponds to.
+//
+// This is a breaking change to the gRPC surface and lands with the v2 chain reset.
 message Block {
-  uint64              index       = 1;
-  bytes               prev_hash   = 2;
-  bytes               state_root  = 3;
-  bytes               proposer    = 4;
-  repeated bytes      triad       = 5;
-  repeated ProvenanceEntry anchored = 6;
-  double              lambda1     = 7;
-  int64               timestamp   = 8;
-  repeated bytes      sigs        = 9;
-  bytes               block_hash  = 10;
+  uint64              index           = 1;  // CBOR key 0
+  bytes               prev_hash       = 2;  // key 1
+  bytes               state_root      = 3;  // key 2
+  bytes               proposer        = 4;  // key 3
+  // key 4 (Triad) is reserved and never present in a v2 block.
+  repeated ProvenanceEntry anchored    = 5;  // key 5
+  double              lambda1         = 6;  // key 6
+  int64               timestamp       = 7;  // key 7
+  // key 8 is reserved in ProtocolVersion == 2 and carries no signatures.
+  repeated ValidatorInfo validators    = 8;  // key 9
+  QuorumConfig        quorum          = 9;  // key 10
+  bytes               block_hash      = 10; // key 11, as stored, not recomputed
+
+  uint32 protocol_version    = 11; // key 12
+  bytes  prepare_sigs_bitmap = 12; // key 13
+  // prepare_sigs is the sole PREPARE-signature field in v2. It is compacted: it holds only
+  // the signatures whose validator has its bit set in prepare_sigs_bitmap, in ascending
+  // validator order, so payload position i belongs to the i-th set bit and not to
+  // validator i.
+  repeated bytes prepare_sigs = 13; // key 14
+  bytes  commit_sig           = 14; // key 15, leader's signature over block_hash
+  repeated string external_anchors = 15; // key 16
+  uint64 key_rotation_epoch   = 16; // key 17
+  bytes  legacy_anchor        = 17; // key 18, genesis only
+  map<string, bytes> metadata = 18; // key 19, e.g. "3cp:degraded-block"
 }
 
 message ProvenanceEntry {
@@ -152,6 +209,37 @@ message ProvenanceEntry {
   bytes  reference  = 6;
   bytes  signature  = 7;
   bytes  mandate_ref = 8;
+}
+
+// ValidatorSetRequest asks for the canonical validator set of a cycle.
+//
+// A light client must be able to obtain this without trusting a single node's account of
+// who is entitled to sign, so the set is served from the node's own validator set rather
+// than read out of any block. Block 0 is where a client is expected to take its initial
+// trust from.
+message ValidatorSetRequest {
+  // cycle is the consensus cycle. Zero means the node's current cycle.
+  uint64 cycle = 1;
+}
+
+message ValidatorSetResponse {
+  repeated ValidatorInfo validators = 1;
+}
+
+// MerkleProofRequest asks for an inclusion proof of a key in the state tree.
+message MerkleProofRequest {
+  bytes  key        = 1;  // 32 bytes
+  uint64 block_index = 2; // the block whose state root the proof is to be checked against
+}
+
+// MerkleProofResponse returns the proof and the root it must be checked against.
+//
+// The root is the block's, not the tree's current one. A proof against today's tree says
+// nothing about an older block, so pairing them would let a client believe an entry is in
+// a block it was never anchored to.
+message MerkleProofResponse {
+  repeated bytes proof = 1;
+  bytes         root  = 2;  // the StateRoot of block_index, 32 bytes
 }
 
 // MandateRequest submits a mandate entry, canonical CBOR per
