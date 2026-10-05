@@ -26,7 +26,7 @@ const (
 var (
 	ErrKyberInvalidKey    = errors.New("invalid Kyber key size")
 	ErrKyberInvalidCT     = errors.New("invalid Kyber ciphertext size")
-	ErrKyberDecapsulation = errors.New("Kyber decapsulation failed")
+	ErrKyberDecapsulation = errors.New("kyber decapsulation failed")
 )
 
 // GenerateKyberKeyPair generates a new Kyber1024 keypair.

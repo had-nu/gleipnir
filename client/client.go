@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/had-nu/gleipnir/pkg/identity"
@@ -128,7 +129,8 @@ func (c *Client) SubmitSigned(ctx context.Context, hash []byte, submitter [16]by
 
 func signPayload(uid *identity.UIDZeroSoulbound, hash []byte, submitter [16]byte, ts int64, label string) []byte {
 	tsLE := make([]byte, 8)
-	binary.LittleEndian.PutUint64(tsLE, uint64(ts))
+	// #nosec G115 -- bit reinterpretation of a signed timestamp for LE encoding.
+	binary.LittleEndian.PutUint64(tsLE, uint64(ts)) //nolint:gosec
 	signed := make([]byte, 0, len(hash)+len(submitter)+len(tsLE)+len(label))
 	signed = append(signed, hash...)
 	signed = append(signed, submitter[:]...)
@@ -159,12 +161,12 @@ func (c *Client) Health(ctx context.Context) (*Health, error) {
 		return nil, fmt.Errorf("health: %w", err)
 	}
 	return &Health{
-		NodeID:    resp.NodeId,
-		Status:    resp.Status,
-		Height:    resp.BlockHeight,
-		Lambda1:   resp.Lambda1,
-		Peers:     int(resp.ActivePeers),
-		Pending:   int(resp.PendingHashes),
+		NodeID:  resp.NodeId,
+		Status:  resp.Status,
+		Height:  resp.BlockHeight,
+		Lambda1: resp.Lambda1,
+		Peers:   clampToInt(uint64(resp.ActivePeers)),
+		Pending: clampToInt(resp.PendingHashes),
 	}, nil
 }
 
@@ -221,4 +223,17 @@ func anchorProofFromPB(pb *pb.AnchorProof) *AnchorProof {
 		Submitter:  pb.Submitter,
 		Label:      pb.Label,
 	}
+}
+
+// clampToInt narrows an unsigned wire count to int without wrapping.
+//
+// The range check happens before the conversion, in unsigned space, so the narrowing
+// itself cannot be the point where a value is lost. On a 32-bit platform a large count
+// would otherwise wrap to a small or negative one; saturating keeps a dashboard reading
+// high rather than wrong.
+func clampToInt(n uint64) int {
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int(n)
 }

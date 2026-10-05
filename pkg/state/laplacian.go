@@ -14,15 +14,15 @@ import (
 // when the graph topology changes.
 type IncrementalLaplacian struct {
 	// Cached state
-	laplacian     *mat.SymDense    // Current Laplacian matrix
-	cholFact      *mat.Cholesky    // Cached Cholesky of (L + μI)
-	shift         float64          // Shift parameter μ
-	nodeOrder     []string         // Current node ordering
-	nodeIndices   map[string]int   // UID -> index map
-	isDirty       bool             // Whether graph changed since last compute
-	opts          Lambda1Options   // Power iteration options
-	lastLambda1   float64          // Cached λ₁ value
-	lastGraphHash string           // Hash of graph structure for change detection
+	laplacian     *mat.SymDense  // Current Laplacian matrix
+	cholFact      *mat.Cholesky  // Cached Cholesky of (L + μI)
+	shift         float64        // Shift parameter μ
+	nodeOrder     []string       // Current node ordering
+	nodeIndices   map[string]int // UID -> index map
+	isDirty       bool           // Whether graph changed since last compute
+	opts          Lambda1Options // Power iteration options
+	lastLambda1   float64        // Cached λ₁ value
+	lastGraphHash string         // Hash of graph structure for change detection
 }
 
 // NewIncrementalLaplacian creates a new IncrementalLaplacian with given options.
@@ -97,7 +97,7 @@ func (il *IncrementalLaplacian) Compute(state NetworkState) (float64, error) {
 
 	var cholFact mat.Cholesky
 	if ok := cholFact.Factorize(shifted); !ok {
-		return 0, fmt.Errorf("Cholesky factorization failed: matrix not positive definite")
+		return 0, fmt.Errorf("matrix is not positive definite: Cholesky factorization failed")
 	}
 	il.cholFact = &cholFact
 

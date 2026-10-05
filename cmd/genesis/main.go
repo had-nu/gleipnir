@@ -132,7 +132,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := os.WriteFile(*outputPath, cborData, 0644); err != nil {
+	// #nosec G306 -- the genesis block is public chain data: its hash is the NetworkID
+	// every node derives identities from, so restricting it would break verification.
+	if err := os.WriteFile(*outputPath, cborData, 0644); err != nil { //nolint:gosec
 		fmt.Fprintf(os.Stderr, "Failed to write output: %v\n", err)
 		os.Exit(1)
 	}
@@ -149,7 +151,9 @@ func main() {
 
 // loadSpec loads and parses the genesis specification from a YAML file.
 func loadSpec(path string) (*GenesisSpec, error) {
-	data, err := os.ReadFile(path)
+	// #nosec G304 -- path is the operator's own -spec flag. Reading the named file is
+	// what the command is for, and no untrusted input reaches it.
+	data, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("failed to read spec file: %w", err)
 	}
@@ -397,17 +401,24 @@ func computeBlockHash(b *chain.Block) []byte {
 
 	// Timestamp (LE64)
 	var tsBuf [8]byte
-	binary.LittleEndian.PutUint64(tsBuf[:], uint64(b.Timestamp))
+	// #nosec G115 -- bit reinterpretation of a signed timestamp for LE encoding.
+	binary.LittleEndian.PutUint64(tsBuf[:], uint64(b.Timestamp)) //nolint:gosec
 	h.Write(tsBuf[:])
 
 	return h.Sum(nil)
 }
 
 // hexDecode decodes a hex string to bytes.
+//
+// This used to walk the string a pair of characters at a time with fmt.Sscanf and ignore
+// the error, which had two failure modes. An odd-length string indexed past its end and
+// panicked, and a string containing a non-hex character left the destination byte at zero
+// and returned success. It decodes the operator-supplied legacy anchor and other snapshot
+// fields, so a typo there produced a silently wrong genesis rather than an error.
 func hexDecode(s string) ([]byte, error) {
-	b := make([]byte, len(s)/2)
-	for i := 0; i < len(s); i += 2 {
-		fmt.Sscanf(s[i:i+2], "%02x", &b[i/2])
+	b, err := hex.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid hex: %w", err)
 	}
 	return b, nil
 }
@@ -482,7 +493,9 @@ type V1Edge struct {
 
 // importV1Snapshot loads a v1.0 snapshot and converts it to a GenesisSpec.
 func importV1Snapshot(path string) (*GenesisSpec, error) {
-	data, err := os.ReadFile(path)
+	// #nosec G304 -- path is the operator's own -import-v1 flag, for a snapshot the
+	// operator exported. Nothing untrusted reaches it.
+	data, err := os.ReadFile(path) //nolint:gosec
 	if err != nil {
 		return nil, fmt.Errorf("failed to read snapshot: %w", err)
 	}
@@ -495,11 +508,7 @@ func importV1Snapshot(path string) (*GenesisSpec, error) {
 	// Convert validators
 	validators := make([]ValidatorSpec, len(snapshot.ValidatorSet))
 	for i, v := range snapshot.ValidatorSet {
-		validators[i] = ValidatorSpec{
-			UID0PubKey:   v.UID0PubKey,
-			VRFPubKey:    v.VRFPubKey,
-			ContractHash: v.ContractHash,
-		}
+		validators[i] = ValidatorSpec(v)
 	}
 
 	// Convert mandates to genesis mandate

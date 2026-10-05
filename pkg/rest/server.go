@@ -24,22 +24,22 @@ import (
 )
 
 const (
-	maxLabelLen   = 1024
-	maxBodyBytes  = 4096
+	maxLabelLen      = 1024
+	maxBodyBytes     = 4096
 	maxTimestampSkew = 30
 
-	errInvalidJSON     = "INVALID_JSON"
-	errInvalidHash     = "INVALID_HASH"
-	errEmptySubmitter  = "EMPTY_SUBMITTER"
-	errLabelTooLong    = "LABEL_TOO_LONG"
-	errExtraFields     = "EXTRA_FIELDS"
-	errStaleTimestamp  = "STALE_TIMESTAMP"
-	errUnknownRoot     = "UNKNOWN_ROOT"
-	errInvalidSig      = "INVALID_SIGNATURE"
-	errNotFound        = "NOT_FOUND"
-	errRateLimited     = "RATE_LIMITED"
-	errQueueFull       = "QUEUE_FULL"
-	errInternal        = "INTERNAL_ERROR"
+	errInvalidJSON    = "INVALID_JSON"
+	errInvalidHash    = "INVALID_HASH"
+	errEmptySubmitter = "EMPTY_SUBMITTER"
+	errLabelTooLong   = "LABEL_TOO_LONG"
+	errExtraFields    = "EXTRA_FIELDS"
+	errStaleTimestamp = "STALE_TIMESTAMP"
+	errUnknownRoot    = "UNKNOWN_ROOT"
+	errInvalidSig     = "INVALID_SIGNATURE"
+	errNotFound       = "NOT_FOUND"
+	errRateLimited    = "RATE_LIMITED"
+	errQueueFull      = "QUEUE_FULL"
+	errInternal       = "INTERNAL_ERROR"
 )
 
 type Server struct {
@@ -71,10 +71,10 @@ type submitRequest struct {
 }
 
 type apiResponse struct {
-	Status string      `json:"status"`
-	Code   string      `json:"code,omitempty"`
-	Message string     `json:"message,omitempty"`
-	Data   interface{} `json:"data,omitempty"`
+	Status  string      `json:"status"`
+	Code    string      `json:"code,omitempty"`
+	Message string      `json:"message,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
 }
 
 func apiError(code string, msg string) apiResponse {
@@ -117,6 +117,12 @@ func WithKeysDir(path string) ServerOption {
 		if path == "" {
 			return nil
 		}
+		root, err := os.OpenRoot(path)
+		if err != nil {
+			return fmt.Errorf("open keys dir: %w", err)
+		}
+		defer func() { _ = root.Close() }()
+
 		entries, err := os.ReadDir(path)
 		if err != nil {
 			return fmt.Errorf("read keys dir: %w", err)
@@ -125,8 +131,22 @@ func WithKeysDir(path string) ServerOption {
 			if e.IsDir() {
 				continue
 			}
+			// Only regular files are loaded. This directory holds identity material, so a
+			// symlink planted in it would otherwise be followed and whatever it pointed at
+			// read as though the operator had put it there.
+			if e.Type()&os.ModeSymlink != 0 {
+				log.Printf("rest: skip %s (symlink)", filepath.Join(path, e.Name()))
+				continue
+			}
+			if !e.Type().IsRegular() {
+				log.Printf("rest: skip %s (not a regular file)", filepath.Join(path, e.Name()))
+				continue
+			}
+			// Read through the root rather than by joining the path, so the open cannot
+			// escape the directory even if the entry name were to change between the read
+			// of the directory and the read of the file.
 			p := filepath.Join(path, e.Name())
-			data, err := os.ReadFile(p)
+			data, err := root.ReadFile(e.Name())
 			if err != nil {
 				log.Printf("rest: skip %s: %v", p, err)
 				continue
@@ -511,15 +531,15 @@ func (s *Server) handleGetBlock(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, apiOK(map[string]interface{}{
-		"index":       block.Index,
-		"prev_hash":   hex.EncodeToString(block.PrevHash),
-		"state_root":  hex.EncodeToString(block.StateRoot),
-		"proposer":    hex.EncodeToString(block.Proposer[:]),
-		"anchored":    entries,
-		"lambda1":     block.Lambda1,
-		"timestamp":   block.Timestamp,
-		"signatures":  sigs,
-		"validators":  validators,
+		"index":      block.Index,
+		"prev_hash":  hex.EncodeToString(block.PrevHash),
+		"state_root": hex.EncodeToString(block.StateRoot),
+		"proposer":   hex.EncodeToString(block.Proposer[:]),
+		"anchored":   entries,
+		"lambda1":    block.Lambda1,
+		"timestamp":  block.Timestamp,
+		"signatures": sigs,
+		"validators": validators,
 		"quorum": map[string]interface{}{
 			"total":    block.Quorum.TotalValidators,
 			"required": block.Quorum.RequiredSigs,
@@ -552,5 +572,3 @@ func (s *Server) handleStateRoot(w http.ResponseWriter, r *http.Request) {
 		"block_height": blockHeight,
 	}))
 }
-
-
