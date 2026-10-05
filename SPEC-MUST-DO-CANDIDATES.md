@@ -226,7 +226,7 @@ Only the `KeyRotationEpoch` field exists in block; validation logic not implemen
 ## 12. Mandate Compliance Verification
 
 ### Current Spec
-§13 defines `compliance-verification` and `compliance-gap` structures but no implementation.
+§15 defines `compliance-verification` and `compliance-gap` structures but no implementation.
 
 ### Implementation Gap
 Structures exist in `pkg/chain/block.go` but no verification logic.

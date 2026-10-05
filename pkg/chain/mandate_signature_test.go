@@ -1,4 +1,4 @@
-// Mandate authority signature tests — 3CP v2.0 §13.
+// Mandate authority signature tests — 3CP v2.0 §15.
 package chain
 
 import (

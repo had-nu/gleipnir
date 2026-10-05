@@ -1,4 +1,4 @@
-// Mandate compliance tests — 3CP v2.0 §13, dual enforcement.
+// Mandate compliance tests — 3CP v2.0 §15, dual enforcement.
 //
 // TestMandateValidation covers submission-time structural validation.
 // TestComplianceCheck covers verification-time detection of omissions.

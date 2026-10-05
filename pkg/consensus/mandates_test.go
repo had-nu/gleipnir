@@ -1,4 +1,4 @@
-// Mandate admission and compliance integration tests — 3CP v2.0 spec §13.
+// Mandate admission and compliance integration tests — 3CP v2.0 spec §15.
 //
 // The verification core in pkg/validation was written and tested without anything
 // calling it. These exercise the engine half: admitting an authentic mandate, refusing

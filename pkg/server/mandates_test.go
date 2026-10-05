@@ -1,4 +1,4 @@
-// Mandate compliance endpoint tests — 3CP v2.0 §13.
+// Mandate compliance endpoint tests — 3CP v2.0 §15.
 //
 //nolint:errcheck // test assertions
 package server

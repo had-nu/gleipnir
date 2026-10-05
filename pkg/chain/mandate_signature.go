@@ -1,4 +1,4 @@
-// Mandate authority signatures — 3CP v2.0 §13.
+// Mandate authority signatures — 3CP v2.0 §15.
 //
 // mandate.cddl gives a mandate entry a Signature at key 10, made by the Authority over
 // the canonical CBOR of the entry with both the signature and the identifier excluded.

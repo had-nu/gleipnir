@@ -73,7 +73,7 @@ type ValidatorInfo struct {
 const MandateLabel = "3cp:mandate:v1"
 
 // MandateEntry is a signed, versioned, time-bounded declaration of anchoring
-// requirements (3CP v2.0 §13, spec/schemas/mandate.cddl).
+// requirements (3CP v2.0 §15, spec/schemas/mandate.cddl).
 //
 // A mandate states what MUST be anchored, so that an auditor can later compare the
 // chain against the obligation. The chain of versions via PrevVersion makes the

@@ -13,7 +13,7 @@
 > |---|---|---|
 > | Signature size | 2700 bytes | **3309** (FIPS 204 ML-DSA-65) — corrected in 3CP#1, implemented in #41 |
 > | Key rotation (§8) | missing, 70% | **implemented** (#38): entry type, 5 validation rules, overlap-aware verification, gRPC endpoints, TC-ROT-01/02 |
-> | Mandate compliance (§13) | structures only, no logic | **implemented** (#43 verification core, #46 engine wiring and gRPC) |
+> | Mandate compliance (§15) | structures only, no logic | **implemented** (#43 verification core, #46 engine wiring and gRPC) |
 > | Light client (§12.2) | 80%, partial | **implemented** (#47): verification library plus all four read operations |
 > | `chain.MandateEntry` | present, adequate | **corrected to `mandate.cddl`** (#43) — it previously had no usable ID |
 > | Block CBOR keys | matches the schema | **corrected** (#45, 3CP#2) — every field was on the wrong number |
@@ -862,7 +862,7 @@ The Gleipnir implementation includes several **production-grade enhancements** t
 
 1. **Complete IPFS publisher** - Replace mock with actual IPFS client
 2. **Implement S3 publisher** - Full S3-compatible storage
-3. **Add conformance tests** - Per SPEC §15 (12 test cases)
+3. **Add conformance tests** - Per SPEC §16 (12 test cases)
 4. **Document API** - gRPC/REST endpoints for external use
 
 ### For Future Enhancements
@@ -904,15 +904,15 @@ The implementation **exceeds specification** in several areas (rate limiting, de
 | `pkg/anchor/anchor.go` | §12.1 | 100% | Anchor publishers |
 | `pkg/state/laplacian.go` | §11 | 100% | λ₁ computation |
 | `pkg/state/storage.go` | N/A | 100% | Persistence |
-| `pkg/validation/errors_v2.go` | §8, §13 | 100% | Error codes |
+| `pkg/validation/errors_v2.go` | §8, §15 | 100% | Error codes |
 | `pkg/chain/block.go` | §8 | 70% | Key rotation missing |
-| `pkg/chain/block.go` | §13 | 85% | Mandate partial |
+| `pkg/chain/block.go` | §15 | 85% | Mandate partial |
 
 ---
 
 ## Appendix B: Test Coverage Recommendations
 
-Per SPEC §15, implement these conformance tests:
+Per SPEC §16, implement these conformance tests:
 
 | Test ID | Description | Status |
 |---------|-------------|--------|

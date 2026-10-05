@@ -584,7 +584,7 @@ func newEngine(...) *Engine {
 func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
     // ... validações existentes ...
     
-    // Validar contra mandatos (SPEC-3CP-V2.md §13)
+    // Validar contra mandatos (SPEC-3CP-V2.md §15)
     if err := e.mandateValidator.ValidateEntryAgainstMandates(
         &entry, e.state.Cycle, entry.Timestamp); err != nil {
         return WrapValidationError(ErrCodeMandateValidation, "mandate validation failed", err)

@@ -1,4 +1,4 @@
-// Submission-time mandate validation — 3CP v2.0 §13, dual enforcement, first half.
+// Submission-time mandate validation — 3CP v2.0 §15, dual enforcement, first half.
 //
 // When a submitter claims compliance by setting MandateRef, the protocol checks the
 // claim structurally: the mandate must exist, be in force at the entry's timestamp, and

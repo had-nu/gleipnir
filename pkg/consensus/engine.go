@@ -66,7 +66,7 @@ type Engine struct {
 	keyRotationValidator *validation.KeyRotationValidator
 	keyRotationBodies    map[[32]byte]*chain.KeyRotationEntry
 
-	// Mandates (spec §13). mandateBodies is guarded by e.mu and holds the full mandate
+	// Mandates (spec §15). mandateBodies is guarded by e.mu and holds the full mandate
 	// entries, for the same reason as keyRotationBodies: ProvenanceEntry anchors only a
 	// hash and a label, so the body cannot be recovered from the chain.
 	mandateResolver   *validation.MandateResolver
@@ -344,7 +344,7 @@ func (e *Engine) Enqueue(entry chain.ProvenanceEntry) error {
 		return err
 	}
 	// An entry that names a mandate is asserting it satisfies that mandate's rules
-	// (spec §13). The claim is checked structurally here; the events themselves are
+	// (spec §15). The claim is checked structurally here; the events themselves are
 	// checked at verification time by the compliance checker.
 	if err := e.validateEntryAgainstMandatesLocked(&entry); err != nil {
 		return err
