@@ -90,7 +90,7 @@ func TestMultiNodeConsensusDeterministic(t *testing.T) {
 
 	// Run cycle 0
 	var rootArr [32]byte
-	var t2 [32]byte = engines[0].st.Root()
+	t2 := engines[0].st.Root()
 	copy(rootArr[:], t2[:])
 	seedVRFProofs(t, bus, peers, 0, rootArr)
 	proposer, proof, _ := SelectProposer(peers, 0, rootArr[:], vrfProofsForPeers(peers, 0, rootArr[:]))
@@ -122,7 +122,7 @@ func TestMultiNodeConsensusDeterministic(t *testing.T) {
 	}
 
 	var rootArr2 [32]byte
-	var temp2 [32]byte = engines[0].st.Root()
+	temp2 := engines[0].st.Root()
 	copy(rootArr2[:], temp2[:])
 	seedVRFProofs(t, bus, peers, 1, rootArr2)
 	runCyclesConcurrently(engines)
@@ -180,13 +180,13 @@ func TestMultiNodeProposerDeterministic(t *testing.T) {
 
 	// All engines compute VRF for cycle 0
 	var rArr [32]byte
-	var t2 [32]byte = engines[0].st.Root()
+	t2 := engines[0].st.Root()
 	copy(rArr[:], t2[:])
 
 	proposer0, proof0, _ := SelectProposer(peers, 0, rArr[:], vrfProofsForPeers(peers, 0, rArr[:]))
 	for i := 1; i < 3; i++ {
 		var rArr [32]byte
-		var t2 [32]byte = engines[i].st.Root()
+		t2 := engines[i].st.Root()
 		copy(rArr[:], t2[:])
 		p, pr, _ := SelectProposer(peers, 0, rArr[:], vrfProofsForPeers(peers, 0, rArr[:]))
 		if p.UID.RootID != proposer0.UID.RootID {
@@ -199,7 +199,7 @@ func TestMultiNodeProposerDeterministic(t *testing.T) {
 
 	// Run full cycle
 	var rootArr2 [32]byte
-	var temp2 [32]byte = engines[0].st.Root()
+	temp2 := engines[0].st.Root()
 	copy(rootArr2[:], temp2[:])
 	seedVRFProofs(t, bus, peers, 0, rootArr2)
 	runCyclesConcurrently(engines)
@@ -241,7 +241,7 @@ func TestMultiNodeEdgesAndLambda(t *testing.T) {
 
 	// Run cycle
 	var rootArr [32]byte
-	var t2 [32]byte = engines[0].st.Root()
+	t2 := engines[0].st.Root()
 	copy(rootArr[:], t2[:])
 	seedVRFProofs(t, bus, peers, 0, rootArr)
 	runCyclesConcurrently(engines)

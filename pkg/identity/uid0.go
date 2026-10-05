@@ -17,14 +17,14 @@ var (
 // UIDZeroSoulbound represents a soulbound identity in the 3CP v2.0 protocol.
 // Keys are derived via HKDF(NetworkID || entropySource) per spec §4.3.
 type UIDZeroSoulbound struct {
-	RootID         [16]byte  `cbor:"0,keyasint"`
-	PublicKey      [1952]byte `cbor:"1,keyasint"`   // Dilithium3 public key
-	SecretKey      []byte     `cbor:"2,keyasint,omitempty"` // Dilithium3 secret key (4032 bytes)
-	VRFPublicKey   [32]byte   `cbor:"3,keyasint"`   // Ristretto255 VRF public key
-	VRFSecretKey   []byte     `cbor:"4,keyasint,omitempty"` // VRF secret key (32 bytes, never exported)
-	ContractHash   [32]byte   `cbor:"5,keyasint"`   // Contract hash binding
-	FinalDigest    [32]byte   `cbor:"6,keyasint"`   // CBOR canonical digest of this struct
-	Simulated      bool       `cbor:"7,keyasint"`
+	RootID       [16]byte   `cbor:"0,keyasint"`
+	PublicKey    [1952]byte `cbor:"1,keyasint"`           // Dilithium3 public key
+	SecretKey    []byte     `cbor:"2,keyasint,omitempty"` // Dilithium3 secret key (4032 bytes)
+	VRFPublicKey [32]byte   `cbor:"3,keyasint"`           // Ristretto255 VRF public key
+	VRFSecretKey []byte     `cbor:"4,keyasint,omitempty"` // VRF secret key (32 bytes, never exported)
+	ContractHash [32]byte   `cbor:"5,keyasint"`           // Contract hash binding
+	FinalDigest  [32]byte   `cbor:"6,keyasint"`           // CBOR canonical digest of this struct
+	Simulated    bool       `cbor:"7,keyasint"`
 }
 
 // NewUIDZero derives a UID0 v2.0 identity from entropy and NetworkID.
@@ -212,9 +212,4 @@ func generateVRFKey(seed []byte) ([32]byte, []byte) {
 // EncodeUID encodes a UID0 public key (Dilithium3) to a hex string for use as map keys.
 func EncodeUID(pubKey []byte) string {
 	return hex.EncodeToString(pubKey)
-}
-
-// generateTimestamp returns a fixed timestamp for simulated environments.
-func generateTimestamp() int64 {
-	return 1700000000
 }

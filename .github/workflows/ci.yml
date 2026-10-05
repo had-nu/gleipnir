@@ -79,7 +79,11 @@ jobs:
       - name: Security audit
         run: |
           go install github.com/securego/gosec/v2/cmd/gosec@latest
-          gosec -quiet -confidence medium -fmt sarif -out gosec.sarif ./...
+          # -quiet is deliberately absent. With it, gosec writes no SARIF file at all
+          # when there are no findings, so the upload step below fails on a missing
+          # artifact and the job goes red on a clean result. Without it the file is always
+          # written, and findings go to the file rather than the log anyway.
+          gosec -confidence medium -fmt sarif -out gosec.sarif ./...
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v4.38.2
         if: always()

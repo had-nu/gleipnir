@@ -118,8 +118,8 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 
 	return &pb.SubmitResponse{
 		TxId:       req.Hash[:],
-		Accepted:  true,
-		Status:    "pending",
+		Accepted:   true,
+		Status:     "pending",
 		BlockIndex: 0,
 		BlockTime:  0,
 	}, nil
@@ -211,15 +211,15 @@ func (s *Server) GetHealth(ctx context.Context, req *pb.Empty) (*pb.HealthRespon
 	root := s.engine.GetStateRoot()
 
 	return &pb.HealthResponse{
-		NodeId:       s.nodeID,
-		Status:       "running",
-		BlockHeight:  health.BlockHeight,
-		CurrentRoot:  root,
-		Lambda1:      float32(health.Lambda1),
-		ActivePeers:  uint32(health.ActivePeers),
-		TotalPeers:   uint32(health.TotalPeers),
-		PendingHashes: uint64(health.PendingHashes),
-		AvgTps:       0,
+		NodeId:        s.nodeID,
+		Status:        "running",
+		BlockHeight:   health.BlockHeight,
+		CurrentRoot:   root,
+		Lambda1:       float32(health.Lambda1),
+		ActivePeers:   nonNegativeUint32(health.ActivePeers),
+		TotalPeers:    nonNegativeUint32(health.TotalPeers),
+		PendingHashes: nonNegativeUint64(health.PendingHashes),
+		AvgTps:        0,
 	}, nil
 }
 

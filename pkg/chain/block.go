@@ -320,7 +320,10 @@ func ComputeBlockHash(b *Block) []byte {
 
 	// Timestamp (LE64)
 	var tsBuf [8]byte
-	binary.LittleEndian.PutUint64(tsBuf[:], uint64(b.Timestamp))
+	// #nosec G115 -- reinterprets the two's complement bits of the signed timestamp for
+	// little-endian encoding (SPEC 5.4 writes LE64(Timestamp)). A bit reinterpretation
+	// rather than a numeric conversion, so no value is lost or clamped.
+	binary.LittleEndian.PutUint64(tsBuf[:], uint64(b.Timestamp)) //nolint:gosec
 	h.Write(tsBuf[:])
 
 	// QuorumConfigCanonical: canonical CBOR of QuorumConfig

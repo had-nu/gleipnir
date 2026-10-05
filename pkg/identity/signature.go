@@ -13,7 +13,10 @@ func CanonicalPayload(hash []byte, submitter []byte, timestamp int64, label stri
 	buf = append(buf, submitter...)
 
 	tsBuf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(tsBuf, uint64(timestamp))
+	// #nosec G115 -- reinterprets the two's complement bits of the signed timestamp for
+	// little-endian encoding. A bit reinterpretation rather than a numeric conversion, so
+	// no value is lost or clamped.
+	binary.LittleEndian.PutUint64(tsBuf, uint64(timestamp)) //nolint:gosec
 	buf = append(buf, tsBuf...)
 	buf = append(buf, []byte(label)...)
 

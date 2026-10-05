@@ -6,8 +6,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"embed"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -35,10 +37,10 @@ type DerivationStep struct {
 
 type ChildUID struct {
 	UID            *identity.UIDZeroSoulbound
-	Name           string          `json:"name"`
-	Role           string          `json:"role"`
+	Name           string           `json:"name"`
+	Role           string           `json:"role"`
 	DerivationPath []DerivationStep `json:"derivation_path"`
-	CreatedAt      int64           `json:"created_at"`
+	CreatedAt      int64            `json:"created_at"`
 }
 
 type DeriveRequest struct {
@@ -110,7 +112,18 @@ func main() {
 
 	log.Printf("Cube Room listening on %s", *listen)
 	log.Printf("  Gleipnir backend: %s", srv.gleipnirURL)
-	if err := http.ListenAndServe(*listen, mux); err != nil {
+	// Explicit server rather than http.ListenAndServe, which sets no timeouts: without
+	// them a client that opens a connection and dribbles headers holds a goroutine
+	// indefinitely.
+	httpSrv := &http.Server{
+		Addr:              *listen,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := httpSrv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("cube-room: %v", err)
 	}
 }
@@ -126,7 +139,9 @@ func (s *CubeRoom) handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(data)
+	if _, err := w.Write(data); err != nil {
+		log.Printf("cube-room: write response: %v", err)
+	}
 }
 
 func (s *CubeRoom) handleDerive(w http.ResponseWriter, r *http.Request) {
@@ -183,12 +198,12 @@ func (s *CubeRoom) handleAnchor(w http.ResponseWriter, r *http.Request) {
 	}
 
 	contextRecord := map[string]interface{}{
-		"uid":                req.UIDID,
-		"name":               req.Name,
-		"role":               req.Role,
-		"timestamp":          time.Now().Unix(),
-		"type":               "onboarding-context",
-		"derivation_path":    child.DerivationPath,
+		"uid":             req.UIDID,
+		"name":            req.Name,
+		"role":            req.Role,
+		"timestamp":       time.Now().Unix(),
+		"type":            "onboarding-context",
+		"derivation_path": child.DerivationPath,
 	}
 	contextJSON, _ := json.Marshal(contextRecord)
 
@@ -230,7 +245,9 @@ func (s *CubeRoom) handleAnchor(w http.ResponseWriter, r *http.Request) {
 			StateRoot  string `json:"state_root"`
 		} `json:"data"`
 	}
-	json.NewDecoder(resp.Body).Decode(&gleipnirResp)
+	if err := json.NewDecoder(resp.Body).Decode(&gleipnirResp); err != nil {
+		log.Printf("cube-room: decode gleipnir response: %v", err)
+	}
 
 	if resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
@@ -248,29 +265,27 @@ func (s *CubeRoom) handleAnchor(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *CubeRoom) handleStatus(w http.ResponseWriter, r *http.Request) {
-	resp, err := http.Get(s.gleipnirURL + "/v1/health")
-	gleipnirOK := err == nil
-	if resp != nil && resp.StatusCode != http.StatusOK {
-		gleipnirOK = false
-	}
-	if resp != nil {
-		resp.Body.Close()
+	// One request, not two: the original fetched /v1/health to check liveness and then
+	// fetched it again to read the body, so the reported status and the reported numbers
+	// could come from different moments.
+	var healthData struct {
+		Data struct {
+			NodeID        string `json:"node_id"`
+			BlockHeight   uint64 `json:"block_height"`
+			PendingHashes int    `json:"pending_hashes"`
+		} `json:"data"`
 	}
 
 	var gleipnirInfo interface{}
-	if gleipnirOK {
-		resp2, err := http.Get(s.gleipnirURL + "/v1/health")
-		if err == nil {
-			defer resp2.Body.Close()
-			var healthData struct {
-				Data struct {
-					NodeID       string `json:"node_id"`
-					BlockHeight  uint64 `json:"block_height"`
-					PendingHashes int   `json:"pending_hashes"`
-				} `json:"data"`
+	gleipnirOK := false
+	resp, err := gleipnirHTTPClient().Get(s.gleipnirURL + "/v1/health")
+	if err == nil {
+		defer func() { _ = resp.Body.Close() }()
+		if resp.StatusCode == http.StatusOK {
+			if err := json.NewDecoder(resp.Body).Decode(&healthData); err == nil {
+				gleipnirOK = true
+				gleipnirInfo = healthData.Data
 			}
-			json.NewDecoder(resp2.Body).Decode(&healthData)
-			gleipnirInfo = healthData.Data
 		}
 	}
 
@@ -332,12 +347,9 @@ func (s *CubeRoom) nextIndex(label string) uint32 {
 func deriveSeed(parentKey []byte, label string, index uint32) []byte {
 	mac := hmac.New(sha256.New, parentKey)
 	mac.Write([]byte(label))
-	b := make([]byte, 4)
-	b[0] = byte(index >> 24)
-	b[1] = byte(index >> 16)
-	b[2] = byte(index >> 8)
-	b[3] = byte(index)
-	mac.Write(b)
+	var b [4]byte
+	binary.BigEndian.PutUint32(b[:], index)
+	mac.Write(b[:])
 	parentSecret := mac.Sum(nil)
 
 	info := []byte("gleipnir-uid-derivation-v1")
@@ -351,8 +363,20 @@ func deriveSeed(parentKey []byte, label string, index uint32) []byte {
 
 func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	var buf bytes.Buffer
-	json.NewEncoder(&buf).Encode(v)
+	if err := json.NewEncoder(&buf).Encode(v); err != nil {
+		log.Printf("cube-room: encode response: %v", err)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(buf.Bytes())
+	if _, err := w.Write(buf.Bytes()); err != nil {
+		log.Printf("cube-room: write response: %v", err)
+	}
+}
+
+// gleipnirHTTPClient is the client used for calls to the Gleipnir node. It has a timeout
+// because the default client has none, and a status page that blocks on an unresponsive
+// node would hang the request indefinitely.
+var gleipnirHTTPClient = func() *http.Client {
+	return &http.Client{Timeout: 5 * time.Second}
 }

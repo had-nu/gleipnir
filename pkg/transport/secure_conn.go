@@ -87,17 +87,41 @@ func kemHandshake(conn net.Conn, sk, pk []byte, peerID string, dialer bool) (*Se
 	return &SecureConn{conn: conn, aead: aead}, peerInfo, nil
 }
 
+// nonceSize is the AEAD nonce length for ChaCha20-Poly1305.
+const nonceSize = 12
+
+// MaxFrameSize is the largest frame SecureConn will read or write: a 12-byte AEAD
+// authentication tag plus a 1 MiB payload.
+//
+// The two directions have to agree on it. ReadMessage rejected anything larger, so a write
+// that exceeded the limit produced a frame the peer would refuse. Worse, the length prefix
+// is a uint32, so a large payload did not merely fail to send -- its truncated length left
+// the peer reading a short frame and treating the remainder as the next frame's header.
+const MaxFrameSize = 1024*1024 + 12
+
+// ErrFrameTooLarge is returned when a message cannot be framed within MaxFrameSize.
+var ErrFrameTooLarge = errors.New("3cp: message exceeds the maximum frame size")
+
 func (s *SecureConn) WriteMessage(data []byte) error {
-	nonce := make([]byte, 12)
+	// Checked before encrypting, since the seal expands the payload and the limit applies
+	// to what goes on the wire.
+	if len(data) > MaxFrameSize-nonceSize {
+		return ErrFrameTooLarge
+	}
+
+	nonce := make([]byte, nonceSize)
 	if _, err := rand.Read(nonce); err != nil {
 		return err
 	}
 	ct := s.aead.Seal(nil, nonce, data, nil)
 
-	frame := make([]byte, 4+12+len(ct))
-	binary.BigEndian.PutUint32(frame[:4], uint32(12+len(ct)))
+	frameLen := nonceSize + len(ct)
+	frame := make([]byte, 4+frameLen)
+	// #nosec G115 -- frameLen cannot exceed MaxFrameSize, checked above, so this
+	// conversion cannot truncate.
+	binary.BigEndian.PutUint32(frame[:4], uint32(frameLen))
 	copy(frame[4:], nonce)
-	copy(frame[4+12:], ct)
+	copy(frame[4+nonceSize:], ct)
 
 	_, err := s.conn.Write(frame)
 	return err
@@ -109,8 +133,8 @@ func (s *SecureConn) ReadMessage() ([]byte, error) {
 		return nil, err
 	}
 	frameLen := binary.BigEndian.Uint32(lenBuf)
-	if frameLen > 1024*1024+12 {
-		return nil, errors.New("message too large")
+	if frameLen > MaxFrameSize {
+		return nil, ErrFrameTooLarge
 	}
 
 	frame := make([]byte, frameLen)
@@ -118,8 +142,8 @@ func (s *SecureConn) ReadMessage() ([]byte, error) {
 		return nil, err
 	}
 
-	nonce := frame[:12]
-	ct := frame[12:]
+	nonce := frame[:nonceSize]
+	ct := frame[nonceSize:]
 
 	plaintext, err := s.aead.Open(nil, nonce, ct, nil)
 	if err != nil {

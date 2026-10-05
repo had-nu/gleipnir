@@ -34,7 +34,7 @@ func (d *DegradedMode) CheckDegradedTransition(currentValidators int, quorumReac
 
 	if !d.inDegraded {
 		// Check if we should enter degraded mode
-		if uint64(currentValidators) < d.MinValidators {
+		if nonNegative(currentValidators) < d.MinValidators {
 			d.inDegraded = true
 			d.consecutiveNormal = 0
 			log.Printf("IPC: entering degraded mode (validators=%d, min=%d)", currentValidators, d.MinValidators)
@@ -42,7 +42,7 @@ func (d *DegradedMode) CheckDegradedTransition(currentValidators int, quorumReac
 		}
 	} else {
 		// In degraded mode - check if we can exit
-		if uint64(currentValidators) >= d.MinValidators && quorumReached {
+		if nonNegative(currentValidators) >= d.MinValidators && quorumReached {
 			d.consecutiveNormal++
 			if d.consecutiveNormal >= d.GraceCycles {
 				d.inDegraded = false
@@ -145,4 +145,17 @@ func GetConsensusConfig(mandate *chain.MandateEntry) (minValidators, graceCycles
 // QuorumRequired computes the required quorum: ceil(2N/3).
 func QuorumRequired(n int) int {
 	return (2*n + 2) / 3
+}
+
+// nonNegative clamps a count to zero if it is negative.
+//
+// Validator counts come from len() in practice and cannot be negative, but the conversion
+// to the uint64 MinValidators is compared against is: a negative count would become a value
+// near 2^64 and read as "far above the threshold", silently keeping the network out of
+// degraded mode when it should be in it.
+func nonNegative(n int) uint64 {
+	if n < 0 {
+		return 0
+	}
+	return uint64(n)
 }

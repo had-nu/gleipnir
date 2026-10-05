@@ -149,7 +149,17 @@ func printStats(id string, ops uint64, elapsed time.Duration) {
 	errs := totalErrors.Load()
 	avg := time.Duration(0)
 	if submits > 0 {
-		avg = time.Duration(totalLatency.Load()/int64(submits)) * time.Microsecond
+		// The division is done in unsigned space. totalLatency is a sum of measured
+		// durations and so is non-negative, but that is a property of how it is
+		// accumulated rather than of its type; converting submits to int64 to match it
+		// would wrap negative for a count above 2^63 and invert the average.
+		total := totalLatency.Load()
+		if total < 0 {
+			total = 0
+		}
+		// #nosec G115 -- total is clamped to zero immediately above, so this conversion
+		// cannot produce a negative value, and submits > 0 rules out division by zero.
+		avg = time.Duration(uint64(total)/submits) * time.Microsecond //nolint:gosec
 	}
 	mn := time.Duration(minLatency.Load()) * time.Microsecond
 	mx := time.Duration(maxLatency.Load()) * time.Microsecond
