@@ -384,6 +384,30 @@ func (e *Engine) countPendingBySubmitter(submitter [16]byte) int {
 	return count
 }
 
+// ValidatorSetSnapshot returns a copy of the canonical validator set, in the block's
+// validator-info shape.
+//
+// The engine tracks the set as state.ValidatorInfo while blocks carry chain.ValidatorInfo;
+// the two have the same fields, so this is a type conversion rather than a mapping. It is
+// returned as a copy because the gRPC layer serves it to light clients as their trust
+// anchor, and handing out the live slice would let a caller edit which validators are
+// trusted.
+func (e *Engine) ValidatorSetSnapshot() []chain.ValidatorInfo {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	out := make([]chain.ValidatorInfo, len(e.state.ValidatorSet))
+	for i := range e.state.ValidatorSet {
+		v := &e.state.ValidatorSet[i]
+		out[i] = chain.ValidatorInfo{
+			ValidatorID:  v.ValidatorID,
+			Dilithium3PK: v.Dilithium3PK,
+			VRFPK:        v.VRFPK,
+			ContractHash: v.ContractHash,
+		}
+	}
+	return out
+}
+
 func (e *Engine) GetStateRoot() []byte {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -688,6 +712,17 @@ func (e *Engine) ProveSMT(key []byte) ([][32]byte, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.st.Prove(key)
+}
+
+// VerifySMT checks an inclusion proof against an explicit root.
+//
+// The root is a parameter rather than the tree's current one so that a light client can
+// tie an entry to a specific historical block: a proof against today's tree says nothing
+// about last week's block unless the root is pinned to that block.
+func (e *Engine) VerifySMT(key, value []byte, root [32]byte, proof [][32]byte) bool {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.st.Verify(key, value, root, proof)
 }
 
 // Anchorer interface implementation.

@@ -9,8 +9,8 @@ import (
 	"github.com/had-nu/gleipnir/pkg/chain"
 	"github.com/had-nu/gleipnir/pkg/consensus"
 	"github.com/had-nu/gleipnir/pkg/identity"
-	"github.com/had-nu/gleipnir/pkg/validation"
 	pb "github.com/had-nu/gleipnir/pkg/server/pb"
+	"github.com/had-nu/gleipnir/pkg/validation"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -69,7 +69,7 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 	if err := s.authenticateSubmit(req); err != nil {
 		code, _ := validation.FromError(err)
 		return &pb.SubmitResponse{
-			TxId:       req.Hash[:],
+			TxId:      req.Hash[:],
 			Accepted:  false,
 			Status:    err.Error(),
 			ErrorCode: code,
@@ -117,7 +117,7 @@ func (s *Server) SubmitHash(ctx context.Context, req *pb.SubmitRequest) (*pb.Sub
 	}
 
 	return &pb.SubmitResponse{
-		TxId:      req.Hash[:],
+		TxId:       req.Hash[:],
 		Accepted:  true,
 		Status:    "pending",
 		BlockIndex: 0,
@@ -318,9 +318,20 @@ func (s *Server) GetBlock(ctx context.Context, req *pb.BlockRequest) (*pb.Block,
 	if b == nil {
 		return &pb.Block{}, nil
 	}
+	return blockToProto(b), nil
+}
 
+// blockToProto converts a block for the wire.
+//
+// BlockHash is the value the block stores, not one recomputed from its contents. Serving
+// a recomputed hash would make every response self-consistent, and a client could then
+// never tell whether the block it was handed agrees with the hash that was signed over --
+// which is the check the whole verification path rests on. If a block's stored hash is
+// wrong, the client has to be the one to find out.
+func blockToProto(b *chain.Block) *pb.Block {
 	pbEntries := make([]*pb.ProvenanceEntry, len(b.Anchored))
-	for i, e := range b.Anchored {
+	for i := range b.Anchored {
+		e := &b.Anchored[i]
 		var approver, reference []byte
 		if e.Approver != nil {
 			approver = e.Approver[:]
@@ -328,30 +339,74 @@ func (s *Server) GetBlock(ctx context.Context, req *pb.BlockRequest) (*pb.Block,
 		if e.Reference != nil {
 			reference = e.Reference[:]
 		}
-		pbe := &pb.ProvenanceEntry{
-			Hash:      e.Hash[:],
-			Submitter: e.Submitter[:],
-			Timestamp: e.Timestamp,
-			Label:     e.Label,
-			Approver:  approver,
-			Reference: reference,
-			Signature: e.Signature,
+		pbEntries[i] = &pb.ProvenanceEntry{
+			Hash:       e.Hash[:],
+			Submitter:  e.Submitter[:],
+			Timestamp:  e.Timestamp,
+			Label:      e.Label,
+			Approver:   approver,
+			Reference:  reference,
+			Signature:  e.Signature,
+			MandateRef: mandateRefBytes(e.MandateRef),
 		}
-		pbEntries[i] = pbe
+	}
+
+	pbValidators := make([]*pb.ValidatorInfo, len(b.Validators))
+	for i := range b.Validators {
+		v := &b.Validators[i]
+		pbValidators[i] = &pb.ValidatorInfo{
+			ValidatorId:  v.ValidatorID[:],
+			Dilithium3Pk: v.Dilithium3PK[:],
+			VrfPk:        v.VRFPK[:],
+			ContractHash: v.ContractHash[:],
+		}
 	}
 
 	pbSigs := make([][]byte, len(b.PrepareSigs))
-	copy(pbSigs, b.PrepareSigs)
+	for i, sig := range b.PrepareSigs {
+		pbSigs[i] = append([]byte(nil), sig...)
+	}
+
+	pbAnchors := make([]string, len(b.ExternalAnchors))
+	copy(pbAnchors, b.ExternalAnchors)
+
+	var metadata map[string][]byte
+	if len(b.Metadata) > 0 {
+		metadata = make(map[string][]byte, len(b.Metadata))
+		for k, v := range b.Metadata {
+			metadata[k] = append([]byte(nil), v...)
+		}
+	}
 
 	return &pb.Block{
-		Index:        b.Index,
-		PrevHash:     b.PrevHash,
-		StateRoot:    b.StateRoot,
-		Proposer:     b.Proposer[:],
-		Anchored:     pbEntries,
-		Lambda1:      b.Lambda1,
-		Timestamp:    b.Timestamp,
-		Sigs:         pbSigs,
-		BlockHash:    b.ComputeHash(),
-	}, nil
+		Index:      b.Index,
+		PrevHash:   b.PrevHash,
+		StateRoot:  b.StateRoot,
+		Proposer:   b.Proposer[:],
+		Anchored:   pbEntries,
+		Lambda1:    b.Lambda1,
+		Timestamp:  b.Timestamp,
+		Validators: pbValidators,
+		Quorum: &pb.QuorumConfig{
+			TotalValidators: nonNegativeUint64(b.Quorum.TotalValidators),
+			RequiredSigs:    nonNegativeUint64(b.Quorum.RequiredSigs),
+		},
+		BlockHash:         b.BlockHash,
+		ProtocolVersion:   uint32(b.ProtocolVersion),
+		PrepareSigsBitmap: b.PrepareSigsBitmap,
+		PrepareSigs:       pbSigs,
+		CommitSig:         b.CommitSig,
+		ExternalAnchors:   pbAnchors,
+		KeyRotationEpoch:  b.KeyRotationEpoch,
+		LegacyAnchor:      b.LegacyAnchor,
+		Metadata:          metadata,
+	}
+}
+
+// mandateRefBytes renders an optional mandate reference as bytes, or nil when absent.
+func mandateRefBytes(ref *[32]byte) []byte {
+	if ref == nil {
+		return nil
+	}
+	return ref[:]
 }
