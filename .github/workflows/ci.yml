@@ -14,6 +14,33 @@ env:
   GO_VERSION: "1.27"
 
 jobs:
+  no-binaries:
+    # Compiled binaries were committed at this repository's first commit and stayed until
+    # now. A plain `go build ./...` in the working tree silently overwrites them, so a
+    # one-line change would arrive with a 5 MB binary diff attached. Nothing should be
+    # reviewable-by-accident; everything should come from source.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Refuse compiled binaries
+        run: |
+          set +e
+          offenders=""
+          for f in $(git ls-files); do
+            [ -f "$f" ] || continue
+            magic=$(head -c 4 "$f" 2>/dev/null | od -An -tx1 | tr -d ' \n')
+            if [ "$magic" = "7f454c46" ]; then
+              offenders="$offenders $f"
+            fi
+          done
+          if [ -n "$offenders" ]; then
+            echo "::error::compiled binaries are tracked in the repository:"
+            for f in $offenders; do echo "  $f"; done
+            echo "Build them with 'make build' (output goes to ./bin, which is ignored)."
+            exit 1
+          fi
+          echo "no compiled binaries tracked"
+
   lint:
     runs-on: ubuntu-latest
     steps:
