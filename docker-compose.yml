@@ -1,6 +1,18 @@
 # IPC (Immutable Provenance Chain) — Gleipnir reference implementation
 # 5-validator topology with Prometheus+Grafana monitoring
-version: "3.9"
+#
+# IPC_PEERS is `addr=uid-file` per peer, not a bare address. The engine derives the
+# validator set, the quorum size and the network graph edges from each peer's public
+# keys, so a peer entry that carries only an address cannot be turned into a validator
+# set. A bare address is now rejected at startup rather than ignored.
+#
+# Peers are discovered over mDNS on the ipc-net bridge, so no static libp2p addresses
+# are needed. Disable with IPC_P2P_NO_MDNS=true and set IPC_P2P_BOOTSTRAP to explicit
+# multiaddrs if mDNS is unavailable in your network.
+#
+# IPC_ALLOW_SIMULATED_IDENTITIES is required because the `bootstrap` service generates
+# these identities with provectl, which derives keys from short deterministic seeds.
+# Remove it once the identities come from a real entropy source.
 
 x-validator: &validator
   build: .
@@ -8,9 +20,10 @@ x-validator: &validator
   volumes:
     - uids:/uids
     - data:/data
-  environment:
+  environment: &validator-env
     IPC_GRPC_PORT: "50051"
     IPC_METRICS_PORT: "9090"
+    IPC_ALLOW_SIMULATED_IDENTITIES: "true"
   depends_on:
     bootstrap:
       condition: service_completed_successfully
@@ -27,46 +40,64 @@ services:
     <<: *validator
     container_name: val-1
     environment:
+      <<: *validator-env
       IPC_NODE_ID: "validator-1"
       IPC_UID_FILE: "/uids/uid-1.cbor"
-      IPC_PEERS: "val-2:50051,val-3:50051,val-4:50051,val-5:50051"
-    ports: ["50051:50051"]
+      IPC_PEERS: "val-2:50051=/uids/uid-2.cbor,val-3:50051=/uids/uid-3.cbor,val-4:50051=/uids/uid-4.cbor,val-5:50051=/uids/uid-5.cbor"
+      IPC_P2P_LISTEN: "/ip4/0.0.0.0/tcp/4001"
+      # Distinct key per validator. The data volume is shared, so a common key path
+      # would give all five nodes the same libp2p peer ID and they would each
+      # recognise the others as themselves, leaving zero connections.
+      IPC_P2P_KEY: "/data/libp2p-1.key"
+    ports: ["50051:50051", "4001:4001"]
 
   validator-2:
     <<: *validator
     container_name: val-2
     environment:
+      <<: *validator-env
       IPC_NODE_ID: "validator-2"
       IPC_UID_FILE: "/uids/uid-2.cbor"
-      IPC_PEERS: "val-1:50051,val-3:50051,val-4:50051,val-5:50051"
-    ports: ["50052:50051"]
+      IPC_PEERS: "val-1:50051=/uids/uid-1.cbor,val-3:50051=/uids/uid-3.cbor,val-4:50051=/uids/uid-4.cbor,val-5:50051=/uids/uid-5.cbor"
+      IPC_P2P_LISTEN: "/ip4/0.0.0.0/tcp/4002"
+      IPC_P2P_KEY: "/data/libp2p-2.key"
+    ports: ["50052:50051", "4002:4002"]
 
   validator-3:
     <<: *validator
     container_name: val-3
     environment:
+      <<: *validator-env
       IPC_NODE_ID: "validator-3"
       IPC_UID_FILE: "/uids/uid-3.cbor"
-      IPC_PEERS: "val-1:50051,val-2:50051,val-4:50051,val-5:50051"
-    ports: ["50053:50051"]
+      IPC_PEERS: "val-1:50051=/uids/uid-1.cbor,val-2:50051=/uids/uid-2.cbor,val-4:50051=/uids/uid-4.cbor,val-5:50051=/uids/uid-5.cbor"
+      IPC_P2P_LISTEN: "/ip4/0.0.0.0/tcp/4003"
+      IPC_P2P_KEY: "/data/libp2p-3.key"
+    ports: ["50053:50051", "4003:4003"]
 
   validator-4:
     <<: *validator
     container_name: val-4
     environment:
+      <<: *validator-env
       IPC_NODE_ID: "validator-4"
       IPC_UID_FILE: "/uids/uid-4.cbor"
-      IPC_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-5:50051"
-    ports: ["50054:50051"]
+      IPC_PEERS: "val-1:50051=/uids/uid-1.cbor,val-2:50051=/uids/uid-2.cbor,val-3:50051=/uids/uid-3.cbor,val-5:50051=/uids/uid-5.cbor"
+      IPC_P2P_LISTEN: "/ip4/0.0.0.0/tcp/4004"
+      IPC_P2P_KEY: "/data/libp2p-4.key"
+    ports: ["50054:50051", "4004:4004"]
 
   validator-5:
     <<: *validator
     container_name: val-5
     environment:
+      <<: *validator-env
       IPC_NODE_ID: "validator-5"
       IPC_UID_FILE: "/uids/uid-5.cbor"
-      IPC_PEERS: "val-1:50051,val-2:50051,val-3:50051,val-4:50051"
-    ports: ["50055:50051"]
+      IPC_PEERS: "val-1:50051=/uids/uid-1.cbor,val-2:50051=/uids/uid-2.cbor,val-3:50051=/uids/uid-3.cbor,val-4:50051=/uids/uid-4.cbor"
+      IPC_P2P_LISTEN: "/ip4/0.0.0.0/tcp/4005"
+      IPC_P2P_KEY: "/data/libp2p-5.key"
+    ports: ["50055:50051", "4005:4005"]
 
   prometheus:
     image: prom/prometheus:v2.53

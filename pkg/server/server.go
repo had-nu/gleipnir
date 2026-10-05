@@ -4,6 +4,8 @@ package server
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
+	"log"
 	"time"
 
 	"github.com/had-nu/gleipnir/pkg/chain"
@@ -30,6 +32,13 @@ type Server struct {
 	// cycleInterval is the interval the engine was constructed with. Options run before the
 	// engine is built, so this is always the value in force.
 	cycleInterval time.Duration
+
+	// peers and gossip are the network configuration. Both are nil for a single-node
+	// server, which is the documented default. When peers are set they must be
+	// accompanied by a gossip bus, or the engine would believe it has a peer set it
+	// cannot talk to; NewServer rejects that combination rather than running degraded.
+	peers  []consensus.Peer
+	gossip consensus.GossipChannel
 }
 
 type ServerOption func(*Server)
@@ -67,6 +76,22 @@ func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOpti
 		}
 	}
 
+	// A peer set without a transport is the configuration that used to be silently
+	// accepted and then ignored. Refusing it is the whole point: the alternative is a
+	// node that believes it is one of N validators, derives a quorum from N, and can
+	// never reach it.
+	if len(s.peers) > 0 && s.gossip == nil {
+		return nil, fmt.Errorf(
+			"server: %d peers configured but no gossip transport; refusing to run with a "+
+				"validator set this node cannot reach (pass WithGossip, or drop WithPeers "+
+				"to run single-node)", len(s.peers))
+	}
+	if s.gossip != nil && len(s.peers) == 0 {
+		return nil, fmt.Errorf(
+			"server: gossip transport configured but no peers; the transport would have " +
+				"nobody to talk to (pass WithPeers alongside WithGossip)")
+	}
+
 	// Initialize identity registry with the node's identity
 	registry := identity.NewRegistry()
 	_ = registry.Register(uid.ID(), uid.PublicKey[:])
@@ -76,10 +101,44 @@ func NewServer(nodeID string, uid *identity.UIDZeroSoulbound, opts ...ServerOpti
 		UID:  *uid,
 		Addr: nodeID,
 	}
-	s.engine = consensus.NewEngine(node, s.cycleInterval)
+
+	if len(s.peers) == 0 {
+		s.engine = consensus.NewEngine(node, s.cycleInterval)
+	} else {
+		// WithPeers was given, so the engine is built through the path that populates
+		// the validator set. Previously this branch did not exist: --peers was parsed
+		// and discarded, and every process ran through NewEngine with nil gossip and
+		// nil peers, which is single-node regardless of configuration.
+		s.engine = consensus.NewEngineWithPeers(node, s.cycleInterval, s.gossip, s.peers)
+		log.Printf("server: %d validators in the peer set", len(s.peers))
+	}
 	s.engine.Start()
 
 	return s, nil
+}
+
+// WithPeers sets the validator set this node participates with.
+//
+// Peers must carry the full UID0 of each validator, because the engine derives the
+// validator set, the network graph edges and the quorum size from them. An address
+// alone is not enough, which is why the peer list is built by the caller from
+// identity material rather than parsed from a string here.
+//
+// If gossip is nil while peers are set, NewServer returns an error. A node that
+// believes it has four validators but has no transport to them would propose and
+// sign on their behalf while never receiving their votes, and would report degraded
+// mode forever. Failing to start is the honest outcome.
+func WithPeers(peers []consensus.Peer) ServerOption {
+	return func(s *Server) {
+		s.peers = peers
+	}
+}
+
+// WithGossip sets the transport the engine gossips over.
+func WithGossip(g consensus.GossipChannel) ServerOption {
+	return func(s *Server) {
+		s.gossip = g
+	}
 }
 
 // WithAllowSimulatedIdentities permits a simulated (test-derived) node identity.

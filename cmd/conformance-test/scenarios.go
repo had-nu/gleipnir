@@ -33,7 +33,7 @@ func p1MastheadPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid 
 		})
 		if err != nil || !resp.Accepted {
 			fail(tc, "G0", "Masthead→IPC pipeline", time.Since(start),
-				fmt.Sprintf("submit finding %s/%s failed: %v %s", f.Path, f.HeaderName, err, resp.Status))
+				fmt.Sprintf("submit finding %s/%s failed: %v %s", f.Path, f.HeaderName, err, submitStatus(resp)))
 			return
 		}
 		submitted++
@@ -88,7 +88,7 @@ func p2HashchainPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid
 		})
 		if err != nil || !resp.Accepted {
 			fail(tc, "-", "Hashchain→IPC pipeline", time.Since(start),
-				fmt.Sprintf("submit %s: %v %s", r.Filepath, err, resp.Status))
+				fmt.Sprintf("submit %s: %v %s", r.Filepath, err, submitStatus(resp)))
 			return
 		}
 		anchored++
@@ -128,7 +128,7 @@ func p3VigilPipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 	})
 	if err != nil || !resp.Accepted {
 		fail(tc, "G0", "Vigil→IPC pipeline", time.Since(start),
-			fmt.Sprintf("submit: %v %s", err, resp.Status))
+			fmt.Sprintf("submit: %v %s", err, submitStatus(resp)))
 		return
 	}
 
@@ -177,7 +177,7 @@ func p4CompliancePipeline(ctx context.Context, raw pb.ProvenanceAnchorClient, ui
 	})
 	if err != nil || !resp.Accepted {
 		fail(tc, "G0", "Compliance→IPC pipeline", time.Since(start),
-			fmt.Sprintf("submit: %v %s", err, resp.Status))
+			fmt.Sprintf("submit: %v %s", err, submitStatus(resp)))
 		return
 	}
 
@@ -214,7 +214,7 @@ func f1SubChain(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *identit
 		})
 		if err != nil || !resp.Accepted {
 			fail(tc, "-", "Sub-chain anchoring", time.Since(start),
-				fmt.Sprintf("submit %s: %v %s", e.ID, err, resp.Status))
+				fmt.Sprintf("submit %s: %v %s", e.ID, err, submitStatus(resp)))
 			return
 		}
 	}

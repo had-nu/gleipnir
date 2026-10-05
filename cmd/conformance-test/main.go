@@ -220,6 +220,22 @@ func randomHash() []byte {
 	return h
 }
 
+// submitStatus reads SubmitHash's status field without dereferencing a nil response.
+//
+// On the error path a gRPC client returns a nil response, and the eight call sites
+// that report a rejected submission all do so in the same breath as the error. The
+// combined `if err != nil || !resp.Accepted` guard is safe -- Go short-circuits, so
+// resp.Accepted is only reached when resp is non-nil -- but reading resp.Status
+// inside that block is not, and it crashed the runner on the first rejected submit
+// instead of reporting why. A test harness that panics on the failure it exists to
+// report cannot report it.
+func submitStatus(resp *pb.SubmitResponse) string {
+	if resp == nil {
+		return "<no response>"
+	}
+	return resp.Status
+}
+
 func signPayload(uid *identity.UIDZeroSoulbound, hash []byte, submitter [16]byte, ts int64, label string) []byte {
 	tsLE := make([]byte, 8)
 	// #nosec G115 -- bit reinterpretation of a signed timestamp for LE encoding.

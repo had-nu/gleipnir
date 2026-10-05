@@ -6,8 +6,11 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -28,6 +31,7 @@ const (
 	protocolEntries   = protocol.ID("/gleipnir/entries/1.0.0")
 	protocolProposals = protocol.ID("/gleipnir/proposals/1.0.0")
 	protocolSigs      = protocol.ID("/gleipnir/sigs/1.0.0")
+	protocolVRFProofs = protocol.ID("/gleipnir/vrfproofs/1.0.0")
 
 	dialTimeout    = 10 * time.Second
 	requestTimeout = 30 * time.Second
@@ -52,12 +56,21 @@ type GossipBus struct {
 	proposals map[uint64]*chain.Block
 	finals    map[uint64]*chain.Block
 	sigs      map[uint64][]consensus.BlockSig
+	vrfProofs map[uint64][]consensus.VRFProofMsg
 	connected map[peer.ID]bool
 
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup //nolint:unused
 }
+
+// Compile-time proof that GossipBus satisfies the interface the engine consumes.
+//
+// Without this assertion the two missing methods that made this type unusable went
+// unnoticed for as long as the package existed: nothing in production constructed a
+// GossipBus, so the incompatibility only surfaced if someone wired it up. The
+// assertion turns that from a runtime surprise into a build failure.
+var _ consensus.GossipChannel = (*GossipBus)(nil)
 
 // mdnsNotifee implements mdns.Notifee
 type mdnsNotifee struct {
@@ -77,22 +90,62 @@ func (n *mdnsNotifee) HandlePeerFound(pi peer.AddrInfo) {
 	n.bus.connectToPeerInfo(pi)
 }
 
+// loadOrGenerateKey returns the libp2p identity for this node.
+//
+// With PrivateKeyFile set, the key is read from or created at that path and the
+// file is created with 0600 on first use. The key is unmarshalled with
+// UnmarshalPrivateKey rather than being regenerated, which is what keeps the peer
+// address stable across restarts — the reason PrivateKeyFile exists at all.
+func loadOrGenerateKey(path string) (crypto.PrivKey, error) {
+	if path == "" {
+		privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+		if err != nil {
+			return nil, fmt.Errorf("generate key: %w", err)
+		}
+		return privKey, nil
+	}
+
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		privKey, err := crypto.UnmarshalPrivateKey(data)
+		if err != nil {
+			return nil, fmt.Errorf("parse libp2p key %s: %w", path, err)
+		}
+		return privKey, nil
+	case !errors.Is(err, os.ErrNotExist):
+		return nil, fmt.Errorf("read libp2p key %s: %w", path, err)
+	}
+
+	privKey, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	if err != nil {
+		return nil, fmt.Errorf("generate key: %w", err)
+	}
+	raw, err := crypto.MarshalPrivateKey(privKey)
+	if err != nil {
+		return nil, fmt.Errorf("marshal libp2p key: %w", err)
+	}
+	// 0600: the file is the node's transport identity. Anyone who reads it can
+	// impersonate this node to its peers.
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		return nil, fmt.Errorf("write libp2p key %s: %w", path, err)
+	}
+	return privKey, nil
+}
+
 func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 	ctx, cancel := context.WithCancel(ctx)
 
-	// Generate or load libp2p identity
-	var privKey crypto.PrivKey
-	var err error
-	if cfg.PrivateKeyFile != "" {
-		// TODO: load from file
-		_ = cfg.PrivateKeyFile
-	}
-	if privKey == nil {
-		privKey, _, err = crypto.GenerateEd25519Key(rand.Reader)
-		if err != nil {
-			cancel()
-			return nil, fmt.Errorf("generate key: %w", err)
-		}
+	// Load or generate the libp2p identity.
+	//
+	// This is what makes a node's peer address stable across restarts. Generating a
+	// fresh key on every boot means the node advertises a different peer ID each time,
+	// so a statically configured bootstrap address stops resolving and peers cannot
+	// reconnect. The previous version accepted PrivateKeyFile and discarded it.
+	privKey, err := loadOrGenerateKey(cfg.PrivateKeyFile)
+	if err != nil {
+		cancel()
+		return nil, err
 	}
 
 	ps, err := pstoremem.NewPeerstore()
@@ -128,6 +181,7 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 		proposals: make(map[uint64]*chain.Block),
 		finals:    make(map[uint64]*chain.Block),
 		sigs:      make(map[uint64][]consensus.BlockSig),
+		vrfProofs: make(map[uint64][]consensus.VRFProofMsg),
 		connected: make(map[peer.ID]bool),
 		ctx:       ctx,
 		cancel:    cancel,
@@ -137,6 +191,7 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 	h.SetStreamHandler(protocolEntries, bus.handleEntriesStream)
 	h.SetStreamHandler(protocolProposals, bus.handleProposalsStream)
 	h.SetStreamHandler(protocolSigs, bus.handleSigsStream)
+	h.SetStreamHandler(protocolVRFProofs, bus.handleVRFProofsStream)
 
 	if cfg.EnableMDNS {
 		if cfg.MDNSServiceTag == "" {
@@ -155,19 +210,60 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 		bus.connectToPeer(peerAddr)
 	}
 
+	// Re-dial on a schedule.
+	//
+	// Nodes in a compose topology start at the same instant, so the first dial
+	// attempt to a peer that has not finished listening fails. Without a retry the
+	// mesh stays permanently incomplete and asymmetric: each node keeps whichever
+	// connections happened to succeed, and a node that nobody dialled receives
+	// nothing at all. A gossip protocol cannot tolerate a half-connected graph, so
+	// the bootstrap set is retried until every node has dialled every other.
+	if len(cfg.BootstrapPeers) > 0 {
+		go bus.redialLoop(cfg.BootstrapPeers)
+	}
+
 	log.Printf("P2P host started: %s (peers: %d)", h.ID(), len(h.Network().Peers()))
 	return bus, nil
 }
 
-func (b *GossipBus) connectToPeer(addrStr string) {
+// redialPeriod is how often the bootstrap set is re-dialled. Short enough that a
+// node which missed its window recovers quickly, long enough not to churn streams.
+const redialPeriod = 10 * time.Second
+
+func (b *GossipBus) redialLoop(addrs []string) {
+	ticker := time.NewTicker(redialPeriod)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case <-ticker.C:
+			for _, addr := range addrs {
+				pi, err := parseAddrInfo(addr)
+				if err != nil {
+					continue
+				}
+				if b.host.Network().Connectedness(pi.ID) == network.Connected {
+					continue
+				}
+				b.connectToPeerInfo(*pi)
+			}
+		}
+	}
+}
+
+func parseAddrInfo(addrStr string) (*peer.AddrInfo, error) {
 	ma, err := multiaddr.NewMultiaddr(addrStr)
 	if err != nil {
-		log.Printf("parse bootstrap addr %s: %v", addrStr, err)
-		return
+		return nil, err
 	}
-	pi, err := peer.AddrInfoFromP2pAddr(ma)
+	return peer.AddrInfoFromP2pAddr(ma)
+}
+
+func (b *GossipBus) connectToPeer(addrStr string) {
+	pi, err := parseAddrInfo(addrStr)
 	if err != nil {
-		log.Printf("addr info from %s: %v", addrStr, err)
+		log.Printf("bootstrap addr %s: %v", addrStr, err)
 		return
 	}
 	b.connectToPeerInfo(*pi)
@@ -276,17 +372,42 @@ func (b *GossipBus) GetSigs(cycle uint64) []consensus.BlockSig {
 	return out
 }
 
+// PublishVRFProof records this node's VRF proof for a cycle and gossips it.
+//
+// VRF proofs decide the proposer, so they cannot be reconstructed after the fact by
+// the receiver the way a block can: each peer publishes its own and the selection
+// reads all of them. First-write-wins per (cycle, signer) for the same reason
+// Propose is first-write-wins — a signer must not be able to swap its proof after
+// selection has read it.
+func (b *GossipBus) PublishVRFProof(proof consensus.VRFProofMsg) {
+	b.mu.Lock()
+	for _, existing := range b.vrfProofs[proof.Cycle] {
+		if existing.SignerID == proof.SignerID {
+			b.mu.Unlock()
+			return
+		}
+	}
+	b.vrfProofs[proof.Cycle] = append(b.vrfProofs[proof.Cycle], proof)
+	b.mu.Unlock()
+	b.broadcastVRFProof(proof)
+}
+
+func (b *GossipBus) GetVRFProofs(cycle uint64) []consensus.VRFProofMsg {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	proofs := b.vrfProofs[cycle]
+	out := make([]consensus.VRFProofMsg, len(proofs))
+	copy(out, proofs)
+	return out
+}
+
 // --- Stream handlers ---
 
 func (b *GossipBus) handleEntriesStream(s network.Stream) {
 	defer func() { _ = s.Close() }()
-	var lenBuf [4]byte
-	if _, err := s.Read(lenBuf[:]); err != nil {
-		return
-	}
-	length := binary.BigEndian.Uint32(lenBuf[:])
-	data := make([]byte, length)
-	if _, err := s.Read(data); err != nil {
+	data, ok := readFramed(s)
+	if !ok {
+		log.Printf("%s: unreadable frame", s.Protocol())
 		return
 	}
 	var entry chain.ProvenanceEntry
@@ -300,13 +421,9 @@ func (b *GossipBus) handleEntriesStream(s network.Stream) {
 
 func (b *GossipBus) handleProposalsStream(s network.Stream) {
 	defer func() { _ = s.Close() }()
-	var lenBuf [4]byte
-	if _, err := s.Read(lenBuf[:]); err != nil {
-		return
-	}
-	length := binary.BigEndian.Uint32(lenBuf[:])
-	data := make([]byte, length)
-	if _, err := s.Read(data); err != nil {
+	data, ok := readFramed(s)
+	if !ok {
+		log.Printf("%s: unreadable frame", s.Protocol())
 		return
 	}
 	var block chain.Block
@@ -320,13 +437,9 @@ func (b *GossipBus) handleProposalsStream(s network.Stream) {
 
 func (b *GossipBus) handleSigsStream(s network.Stream) {
 	defer func() { _ = s.Close() }()
-	var lenBuf [4]byte
-	if _, err := s.Read(lenBuf[:]); err != nil {
-		return
-	}
-	length := binary.BigEndian.Uint32(lenBuf[:])
-	data := make([]byte, length)
-	if _, err := s.Read(data); err != nil {
+	data, ok := readFramed(s)
+	if !ok {
+		log.Printf("%s: unreadable frame", s.Protocol())
 		return
 	}
 	var sig consensus.BlockSig
@@ -338,38 +451,91 @@ func (b *GossipBus) handleSigsStream(s network.Stream) {
 	b.mu.Unlock()
 }
 
+func (b *GossipBus) handleVRFProofsStream(s network.Stream) {
+	defer func() { _ = s.Close() }()
+	data, ok := readFramed(s)
+	if !ok {
+		log.Printf("%s: unreadable frame", s.Protocol())
+		return
+	}
+	var proof consensus.VRFProofMsg
+	if err := json.Unmarshal(data, &proof); err != nil {
+		return
+	}
+	// Same first-write-wins rule as PublishVRFProof: a received proof must not
+	// displace one already held for the same (cycle, signer).
+	b.mu.Lock()
+	for _, existing := range b.vrfProofs[proof.Cycle] {
+		if existing.SignerID == proof.SignerID {
+			b.mu.Unlock()
+			return
+		}
+	}
+	b.vrfProofs[proof.Cycle] = append(b.vrfProofs[proof.Cycle], proof)
+	b.mu.Unlock()
+}
+
+// readFramed reads one length-prefixed frame from s.
+//
+// Two things are corrected here relative to the previous per-handler inline copies.
+//
+// The length is bounded by maxStreamMessage. A peer announcing 4 GiB would
+// otherwise cause a 4 GiB allocation before any of the payload was validated.
+//
+// Reads are exact. stream.Read is permitted to return a short count, so the
+// previous `if _, err := s.Read(data); err != nil` accepted a truncated frame as
+// long as it read anything at all, and the JSON decoder was then asked to parse a
+// partial message. io.ReadFull is the only correct way to consume a frame.
+func readFramed(s network.Stream) ([]byte, bool) {
+	var lenBuf [4]byte
+	if _, err := io.ReadFull(s, lenBuf[:]); err != nil {
+		return nil, false
+	}
+	length := binary.BigEndian.Uint32(lenBuf[:])
+	if length == 0 || length > maxStreamMessage {
+		return nil, false
+	}
+	data := make([]byte, length)
+	if _, err := io.ReadFull(s, data); err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
 // --- Broadcast helpers ---
 
 func (b *GossipBus) broadcastEntry(entry chain.ProvenanceEntry) {
 	data, _ := json.Marshal(entry)
-	peers := b.host.Network().Peers()
-	for _, pid := range peers {
-		if pid == b.host.ID() {
-			continue
-		}
-		go b.sendStream(pid, protocolEntries, data)
-	}
+	b.broadcast(protocolEntries, data)
 }
 
 func (b *GossipBus) broadcastProposal(block chain.Block) {
 	data, _ := json.Marshal(block)
-	peers := b.host.Network().Peers()
-	for _, pid := range peers {
-		if pid == b.host.ID() {
-			continue
-		}
-		go b.sendStream(pid, protocolProposals, data)
-	}
+	b.broadcast(protocolProposals, data)
 }
 
 func (b *GossipBus) broadcastSig(sig consensus.BlockSig) {
 	data, _ := json.Marshal(sig)
+	b.broadcast(protocolSigs, data)
+}
+
+func (b *GossipBus) broadcastVRFProof(proof consensus.VRFProofMsg) {
+	data, _ := json.Marshal(proof)
+	b.broadcast(protocolVRFProofs, data)
+}
+
+// broadcast sends one framed message to every connected peer except this node.
+func (b *GossipBus) broadcast(proto protocol.ID, data []byte) {
 	peers := b.host.Network().Peers()
+	if len(peers) == 0 {
+		log.Printf("broadcast %s: no connected peers", proto)
+		return
+	}
 	for _, pid := range peers {
 		if pid == b.host.ID() {
 			continue
 		}
-		go b.sendStream(pid, protocolSigs, data)
+		go b.sendStream(pid, proto, data)
 	}
 }
 
@@ -403,10 +569,22 @@ func (b *GossipBus) sendStream(pid peer.ID, proto protocol.ID, data []byte) {
 	// this function, so this conversion cannot truncate.
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(data)))
 	if _, err := s.Write(lenBuf[:]); err != nil {
+		log.Printf("write length to %s on %s: %v", pid, proto, err)
 		return
 	}
 	if _, err := s.Write(data); err != nil {
+		log.Printf("write payload to %s on %s: %v", pid, proto, err)
 		return
+	}
+	// CloseWrite, not Close.
+	//
+	// Close tears down the whole stream, which resets it at the remote end. The
+	// receiver's read of the frame then fails with a stream reset instead of seeing
+	// the data followed by EOF, so every gossipped message was silently dropped on
+	// arrival. CloseWrite half-closes the sending side only, which is the signal the
+	// reader is waiting for.
+	if err := s.CloseWrite(); err != nil {
+		log.Printf("close write to %s on %s: %v", pid, proto, err)
 	}
 }
 

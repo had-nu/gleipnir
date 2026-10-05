@@ -83,7 +83,7 @@ func a4EntryNonRepudiation(ctx context.Context, raw pb.ProvenanceAnchorClient, u
 		Reference: entryPayload[:], Approver: uid.RootID[:],
 	})
 	if err != nil || !resp.Accepted {
-		fail(tc, "G0", "Entry non-repudiation", time.Since(start), fmt.Sprintf("submit: %v %s", err, resp.Status))
+		fail(tc, "G0", "Entry non-repudiation", time.Since(start), fmt.Sprintf("submit: %v %s", err, submitStatus(resp)))
 		return
 	}
 
@@ -175,7 +175,7 @@ func a9VerifyBeforeAnchor(ctx context.Context, raw pb.ProvenanceAnchorClient, ui
 		Hash: hash, Submitter: uid.RootID[:], Timestamp: ts, Label: "a9-before", Signature: sig,
 	})
 	if err != nil || !resp.Accepted {
-		fail(tc, "-", "Verify before anchor", time.Since(start), fmt.Sprintf("submit: %v %s", err, resp.Status))
+		fail(tc, "-", "Verify before anchor", time.Since(start), fmt.Sprintf("submit: %v %s", err, submitStatus(resp)))
 		return
 	}
 
@@ -352,7 +352,7 @@ func c3DecisionChain(ctx context.Context, raw pb.ProvenanceAnchorClient, uid *id
 		Reference: hashA,
 	})
 	if err != nil || !resp.Accepted {
-		fail(tc, "G0", "Decision chain", time.Since(start), fmt.Sprintf("entry B submit: %v %s", err, resp.Status))
+		fail(tc, "G0", "Decision chain", time.Since(start), fmt.Sprintf("entry B submit: %v %s", err, submitStatus(resp)))
 		return
 	}
 
