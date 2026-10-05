@@ -1,4 +1,4 @@
-// Mandate admission and compliance — 3CP v2.0 §13.
+// Mandate admission and compliance — 3CP v2.0 §15.
 //
 // This wires the second half of the gap that pkg/validation implements. The
 // verification core exists; nothing called it. Three things were missing:

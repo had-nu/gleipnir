@@ -439,7 +439,7 @@ O Gleipnir já tem **tudo o que você precisa**:
 
 ### **4. Testes são Essenciais**
 - Escreva testes **enquanto** implementa
-- Use os testes de conformidade do SPEC (§15)
+- Use os testes de conformidade do SPEC (§16)
 - TC-ROT-01, TC-ROT-02, TC-ZK-01 são **obrigatórios**
 
 ### **5. Documentação é Parte do Código**
@@ -533,7 +533,7 @@ go mod download
 
 1. **3CP v2.0 Specification:** https://github.com/had-nu/3CP (`spec/SPEC-3CP-V2.md`)
    - Todos os requisitos do protocolo
-   - Seções relevantes: §4 (Criptografia), §5 (Blocos), §6 (Consenso), §8 (Key Rotation), §9 (SMT), §12 (Light Client), §13 (Mandates)
+   - Seções relevantes: §4 (Criptografia), §5 (Blocos), §6 (Consenso), §8 (Key Rotation), §9 (SMT), §12 (Light Client), §15 (Mandates)
 
 2. **Gleipnir Codebase:** https://github.com/had-nu/gleipnir
    - Código existente para referência

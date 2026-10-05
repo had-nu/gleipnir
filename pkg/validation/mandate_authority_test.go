@@ -1,4 +1,4 @@
-// Mandate authority validation tests — 3CP v2.0 §13.
+// Mandate authority validation tests — 3CP v2.0 §15.
 package validation
 
 import (

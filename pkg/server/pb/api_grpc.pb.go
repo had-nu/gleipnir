@@ -60,7 +60,7 @@ type ProvenanceAnchorClient interface {
 	// GetActivePublicKey reports which validator keys are authoritative in a cycle,
 	// which is two during a rotation's overlap window (SPEC §8).
 	GetActivePublicKey(ctx context.Context, in *ActiveKeyRequest, opts ...grpc.CallOption) (*ActiveKeyResponse, error)
-	// Mandate compliance (SPEC §13).
+	// Mandate compliance (SPEC §15).
 	//
 	// A mandate states what MUST be anchored, so an auditor can later compare the chain
 	// against the obligation. SubmitMandate installs one; CheckCompliance asks whether
@@ -259,7 +259,7 @@ type ProvenanceAnchorServer interface {
 	// GetActivePublicKey reports which validator keys are authoritative in a cycle,
 	// which is two during a rotation's overlap window (SPEC §8).
 	GetActivePublicKey(context.Context, *ActiveKeyRequest) (*ActiveKeyResponse, error)
-	// Mandate compliance (SPEC §13).
+	// Mandate compliance (SPEC §15).
 	//
 	// A mandate states what MUST be anchored, so an auditor can later compare the chain
 	// against the obligation. SubmitMandate installs one; CheckCompliance asks whether

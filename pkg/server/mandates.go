@@ -1,4 +1,4 @@
-// Mandate compliance endpoints — 3CP v2.0 §13.
+// Mandate compliance endpoints — 3CP v2.0 §15.
 package server
 
 import (

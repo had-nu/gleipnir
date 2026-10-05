@@ -1,4 +1,4 @@
-// Mandate resolution — 3CP v2.0 §13.
+// Mandate resolution — 3CP v2.0 §15.
 //
 // A mandate is an ordinary provenance entry labelled "3cp:mandate:v1"; the entry hash
 // is the key and the canonical CBOR body is the value. Resolving a mandate therefore

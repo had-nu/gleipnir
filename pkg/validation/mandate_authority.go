@@ -1,4 +1,4 @@
-// Mandate authority validation — 3CP v2.0 §13.
+// Mandate authority validation — 3CP v2.0 §15.
 //
 // A mandate is only worth enforcing if the RootID it names as its Authority actually
 // issued it. mandate.cddl carries a signature for exactly that reason, but nothing

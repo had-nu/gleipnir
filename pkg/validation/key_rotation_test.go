@@ -1,6 +1,6 @@
-// Key rotation conformance tests — 3CP v2.0 spec §8.2 and §15.
+// Key rotation conformance tests — 3CP v2.0 spec §8.2 and §16.
 //
-// Test IDs follow SPEC §15:
+// Test IDs follow SPEC §16:
 //
 //	TC-ROT-01  valid key rotation; both keys accepted across the overlap window
 //	TC-ROT-02  rotation with too-early EffectiveCycle is rejected

@@ -1,4 +1,4 @@
-// Verification-time mandate compliance — 3CP v2.0 §13, dual enforcement, second half.
+// Verification-time mandate compliance — 3CP v2.0 §15, dual enforcement, second half.
 //
 // This is the protocol's novelty. The chain is compared against the obligation the
 // mandate declared, and the comparison is a pure function of (mandate, window, chain),

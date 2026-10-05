@@ -23,7 +23,7 @@ service ProvenanceAnchor {
   // which is two during a rotation's overlap window (SPEC §8).
   rpc GetActivePublicKey(ActiveKeyRequest) returns (ActiveKeyResponse);
 
-  // Mandate compliance (SPEC §13).
+  // Mandate compliance (SPEC §15).
   //
   // A mandate states what MUST be anchored, so an auditor can later compare the chain
   // against the obligation. SubmitMandate installs one; CheckCompliance asks whether
