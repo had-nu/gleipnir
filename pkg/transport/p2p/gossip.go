@@ -230,9 +230,18 @@ func NewGossipBus(ctx context.Context, cfg Config) (*GossipBus, error) {
 // node which missed its window recovers quickly, long enough not to churn streams.
 const redialPeriod = 10 * time.Second
 
+// redialRetryInterval is the minimum time between retry attempts for a given peer.
+// This prevents a single slow dial from blocking the entire redial loop.
+const redialRetryInterval = 2 * time.Second
+
 func (b *GossipBus) redialLoop(addrs []string) {
 	ticker := time.NewTicker(redialPeriod)
 	defer ticker.Stop()
+
+	// Track the last attempt time per peer ID to avoid hammering a peer that
+	// consistently fails to dial (e.g. missing transport addresses).
+	lastAttempt := make(map[peer.ID]time.Time)
+
 	for {
 		select {
 		case <-b.ctx.Done():
@@ -241,12 +250,23 @@ func (b *GossipBus) redialLoop(addrs []string) {
 			for _, addr := range addrs {
 				pi, err := parseAddrInfo(addr)
 				if err != nil {
+					log.Printf("redial: failed to parse bootstrap addr %s: %v", addr, err)
 					continue
 				}
+
+				// Throttle: skip this peer if we've attempted it too recently.
+				if lastAttempt[pi.ID].Add(redialRetryInterval).After(time.Now()) {
+					continue
+				}
+
 				if b.host.Network().Connectedness(pi.ID) == network.Connected {
+					lastAttempt[pi.ID] = time.Now()
 					continue
 				}
+
+				log.Printf("redial: dialling peer %s (last attempt: %v ago)", pi.ID, time.Since(lastAttempt[pi.ID]))
 				b.connectToPeerInfo(*pi)
+				lastAttempt[pi.ID] = time.Now()
 			}
 		}
 	}
