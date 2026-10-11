@@ -1,5 +1,15 @@
 # Implementation Status
 
+> **Addendum — 2026-10-11, after `79577ad`.** Items 3.1, 3.2 and 3.3 (Dockerfile half) are
+> **closed**. 3.3 (CI half) is **closed** — see below. A new item, **3.10**, is open and is now
+> the top blocker. Sections below are otherwise unchanged and still describe `7dfd23d`.
+>
+> **Everything in this document is now subject to `VERIFICATION-PLAYBOOK.md`.** That file records
+> three wrong diagnoses in a row on this codebase, each made confidently and each falsified by
+> running the code. Read it before acting on anything below, and in particular before trusting
+> any statement here about peer discovery or multi-node behaviour — those were the ones that
+> turned out wrong.
+
 **Date**: 2026-10-05
 **Basis**: every claim below was checked against the repository at commit `7dfd23d` plus the
 cryptographic fixes in `0f59ea1`. Where a claim is empirical rather than inferred, the command
@@ -275,6 +285,82 @@ loaded runner can trip it.
 
 A latency assertion comparing wall-clock percentiles is inherently load-sensitive. It should skip
 under `-short`, which the CI race job already uses but the main test job does not.
+
+### 3.10 Phase-ordering deadlock stops the network after one block
+
+**Severity: critical. This is the reason 17 of 33 conformance cases fail, and it is now the
+highest-value item in this document.**
+
+Found by running the five-validator topology at `79577ad`, not by reading the code. The transport
+and the VRF election both work; the cycle cannot complete.
+
+`pkg/consensus/engine.go:692-714` runs two `RunPreparePhase` calls and then `RunCommitPhase`:
+
+```go
+prepareResult := e.RunPreparePhase(cycle, rootArr, allPending, false, requiredQuorum)  // PHASE 1
+prepareResult = e.RunPreparePhase(cycle, rootArr, allPending, true,  requiredQuorum)   // PHASE 2
+commitResult  := e.RunCommitPhase(cycle, prepareResult)                                 // PHASE 3
+```
+
+The dependency cycle between them:
+
+1. **PHASE 1** — the elected proposer builds and broadcasts the candidate block (`prepare.go:110-204`).
+   Every validator then reads it, verifies it, and publishes its PREPARE signature
+   (`prepare.go:205-246`).
+2. **PHASE 2** — called again with `checkQuorum=true`. On the proposer this collects signatures and
+   waits for quorum (`prepare.go:313-322`). On a validator it re-reads the proposal and re-signs.
+3. **PHASE 3** — the proposer publishes `B_final` (`commit.go:33-77`). Validators wait for it
+   (`commit.go:88`).
+
+A validator only reaches PHASE 3 **after** finishing its own PHASE 2. The proposer's PHASE 2 only
+completes **once** it has quorum. So the quorum is gated behind validators that are themselves
+waiting. The proposer times out, aborts, reverts — and never enters another cycle.
+
+Measured on val-2, which was elected proposer for cycle 0:
+
+```
+17:17:13 IPC cycle 0: COMMIT failed: PREPARE quorum not reached
+17:17:17 IPC cycle 0: COMMIT failed: no B_final from leader
+17:17:22 IPC cycle 0: COMMIT failed: no B_final from leader     (repeats every 3s, indefinitely)
+```
+
+and val-1, in the same seconds:
+
+```
+17:17:11 vrf proof: cycle=0 signer=6fb48e7d... accepted from 12D3KooWJHQRm9...
+17:17:11 vrf proof: cycle=0 signer=39770acb... accepted from 12D3KooWFWRzHtU...
+17:17:11 vrf proof: cycle=0 signer=0085dc9e... accepted from 12D3KooWGYrR6Gu...
+17:17:12 vrf proof: cycle=0 signer=be38df14... accepted from 12D3KooWPHmJRmc...
+17:17:12 gossip vrf proof: cycle=0 signer=6a42d717... to 4 peer(s)
+17:17:20 IPC cycle 1: PREPARE failed: ... incomplete proof set: no proof from be38df14...
+```
+
+The four VRF proofs arrive within a second — VRF election works. Cycle 0 completes once, one block
+finalises (`block_height: 1`, non-zero `state_root`). From cycle 1 onwards val-2 has stopped
+publishing proofs because it never gets past PHASE 2, and the remaining four starve waiting for a
+proof that will never come.
+
+**The asymmetry is the signature of this defect.** Each node names a *different* missing peer
+(val-1 and val-3 name val-2, val-5 names val-4), which is what distinguishes an ordering deadlock
+from a transport failure — a transport failure names the same unreachable peer everywhere.
+
+**Fix.** Either re-order PHASE 2 so validators publish their signatures before the proposer
+evaluates quorum, or have the proposer publish `B_final` without waiting on a quorum that depends
+on it. This is a change to protocol flow, not a patch. The documented sequence in
+`docs/ARCHITECTURE-v2.md` §5 shows the intended order and the code does not implement it.
+
+**Guard.** The `topology` job in `.github/workflows/ci.yml` records block height and the pass count
+as artifacts, so a change here is measurable rather than argued about.
+
+### 3.11 The conformance suite cannot fail a build
+
+Found while adding the `topology` CI job. `cmd/conformance-test` printed its results and returned 0
+unconditionally — `printReport()` had no exit path driven by the failure count. A CI job running it
+would have gone green whether 33 cases passed or none.
+
+Fixed with a `--allow-fail` flag: the suite now exits non-zero on any failure by default, and the
+`topology` job opts out explicitly while asserting the score has not fallen below 16/33. A gate that
+passes unconditionally is worse than no gate, because it is read as coverage that does not exist.
 
 ---
 

@@ -37,6 +37,10 @@ type TestResult struct {
 
 var results []TestResult
 
+// allowFail mirrors the --allow-fail flag for printReport, which is package-level and
+// cannot take a parameter without threading one through main for no benefit.
+var allowFail bool
+
 func pass(tc, gap, name string, latency time.Duration, detail string) {
 	results = append(results, TestResult{Name: name, TC: tc, Gap: gap, Passed: true, Detail: detail, Latency: latency})
 }
@@ -49,7 +53,11 @@ func main() {
 	target := flag.String("target", "val-1:50051", "gRPC target address")
 	uidFile := flag.String("uid-file", "/uids/uid-1.cbor", "path to validator UID0 CBOR file")
 	timeout := flag.Duration("timeout", 120*time.Second, "total test suite timeout")
+	allowFailFlag := flag.Bool("allow-fail", false,
+		"Exit 0 even when cases fail, printing the counts. For a suite with known "+
+			"outstanding failures; a regression gate must not use it.")
 	flag.Parse()
+	allowFail = *allowFailFlag
 
 	fmt.Println("=== IPC Protocol Conformance Test ===")
 	fmt.Printf("Target: %s\n", *target)
@@ -211,6 +219,25 @@ func printReport() {
 			}
 		}
 		fmt.Println()
+	}
+
+	// Exit non-zero when any case fails.
+	//
+	// This function previously returned 0 unconditionally, so a CI job running the
+	// suite went green whether 33 cases passed or none did. The pass/fail counts are
+	// printed either way, but nothing consumed them: `docker compose run` reports the
+	// container exit code, and that was always 0.
+	//
+	// --allow-fail exists for the current state, where 17 of 33 cases are known to
+	// fail against a single unresolved phase-ordering deadlock. It makes that gap
+	// explicit and greppable instead of leaving the suite as a rubber stamp; the job
+	// in .github/workflows/ci.yml uses it and additionally asserts the count has not
+	// regressed below the recorded baseline.
+	if allowFail {
+		return
+	}
+	if failed > 0 {
+		os.Exit(1)
 	}
 }
 
