@@ -222,6 +222,13 @@ jobs:
       # the playbook requires be named in the commit message.
       - name: Record mesh and block height
         run: |
+          # Give the mesh time to settle before measuring it. Nodes that start
+          # together dial each other before every peer is listening, and the redial
+          # loop retries on a 10s period -- so a sample taken one second after boot
+          # reads 3/4 on some nodes and looks like a fault when it is just the
+          # topology still forming. Measured immediately, this reported 3/4 on two
+          # nodes; 30s later it is 4/4 on all five.
+          sleep 30
           {
             echo "### Transport mesh (connections per node)"
             for i in 1 2 3 4 5; do
@@ -270,6 +277,26 @@ jobs:
       # The suite reports "Passed: N / 33" and exits non-zero on any failure. Both are
       # consumed: the count is compared against the floor, and the exit code is checked
       # so a suite that cannot reach the node at all is a failure rather than a zero.
+      # The mesh is what every other claim depends on: no quorum, no proposer
+      # election, no block. A partial mesh here is the failure that produced three
+      # wrong diagnoses in this repository's history, so it is asserted rather than
+      # reported. 4 is the only correct value for five nodes forming a full mesh.
+      - name: Assert mesh is complete
+        run: |
+          incomplete=""
+          for i in 1 2 3 4 5; do
+            n=$(grep -E "^val-$i: [0-9]+$" topology-report.txt | grep -oE "[0-9]+$" || echo 0)
+            if [ "$n" -ne 4 ]; then
+              incomplete="$incomplete val-$i=$n"
+            fi
+          done
+          if [ -n "$incomplete" ]; then
+            echo "::error::mesh is not full on:$incomplete (expected 4 per node)"
+            echo "See the topology-report artifact."
+            exit 1
+          fi
+          echo "mesh is full: 4/4 on all five nodes"
+
       - name: Assert conformance score has not regressed
         run: |
           if ! grep -qE "Passed: [0-9]+ / 33" conformance-output.txt; then
