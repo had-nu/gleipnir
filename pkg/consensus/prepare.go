@@ -49,18 +49,40 @@ func (e *Engine) RunPreparePhase(cycle uint64, rootArr [32]byte, pendingEntries 
 		e.gossip.PublishVRFProof(VRFProofMsg{Cycle: cycle, Proof: proofBytes, SignerID: myUIDHex})
 	}
 
-	// Collect VRF proofs
-	vrfProofs := make(map[string]*identity.VRFProof)
-	vrfProofs[myUIDHex] = localProof
-	if e.gossip != nil {
-		for _, msg := range e.gossip.GetVRFProofs(cycle) {
-			p, err := identity.UnmarshalVRFProof(msg.Proof)
-			if err == nil {
-				if _, exists := vrfProofs[msg.SignerID]; !exists {
-					vrfProofs[msg.SignerID] = p
+	// Collect VRF proofs, waiting for the peers' to arrive.
+	collectVRFProofs := func() map[string]*identity.VRFProof {
+		proofs := make(map[string]*identity.VRFProof)
+		proofs[myUIDHex] = localProof
+		if e.gossip != nil {
+			for _, msg := range e.gossip.GetVRFProofs(cycle) {
+				p, err := identity.UnmarshalVRFProof(msg.Proof)
+				if err == nil {
+					if _, exists := proofs[msg.SignerID]; !exists {
+						proofs[msg.SignerID] = p
+					}
 				}
 			}
 		}
+		return proofs
+	}
+
+	// Every validator publishes its own proof at the start of its cycle and then needs
+	// every peer's before it can select. Those two events are a network round trip
+	// apart, so reading the set immediately always yields only the local proof and the
+	// cycle aborts on a race it cannot win.
+	//
+	// This is the same hazard waitForProposal and waitForSignatures already handle for
+	// blocks and prepare signatures. Without it, observed on the five-validator
+	// topology, every node aborted every cycle with "incomplete proof set" and no
+	// block ever finalised.
+	//
+	// SelectProposerVRF still requires an every-peer proof set; this only gives those
+	// proofs time to arrive before the requirement is applied, so the safety property
+	// that aborting buys is unchanged.
+	vrfProofs := collectVRFProofs()
+	if e.gossip != nil && len(vrfProofs) < len(proposerPeers) {
+		e.waitForVRFProofs(e.ctx, cycle, len(proposerPeers), e.proposalWait(), collectVRFProofs)
+		vrfProofs = collectVRFProofs()
 	}
 
 	// Select proposer
@@ -370,6 +392,47 @@ func (e *Engine) waitForProposal(ctx context.Context, cycle uint64, timeout time
 		case <-ticker.C:
 			if time.Now().After(deadline) {
 				return nil
+			}
+		}
+	}
+}
+
+// waitForVRFProofs polls collect until it holds a proof from each of the wanted
+// signers, or the timeout elapses.
+//
+// A VRF proof is the one message a validator cannot reconstruct for itself and then
+// recompute, so proposer selection has nothing to fall back on: either every peer's
+// proof is present or the cycle aborts. Giving them a bounded window to cross the
+// network is what turns that abort from permanent into rare.
+//
+// Like the other waits here it is capped and ctx-interruptible, so a peer that never
+// publishes costs this cycle and nothing more.
+func (e *Engine) waitForVRFProofs(
+	ctx context.Context,
+	cycle uint64,
+	want int,
+	timeout time.Duration,
+	collect func() map[string]*identity.VRFProof,
+) {
+	if timeout <= 0 || want <= 0 {
+		return
+	}
+
+	const pollInterval = 2 * time.Millisecond
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for {
+		if len(collect()) >= want {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				return
 			}
 		}
 	}
