@@ -1,7 +1,11 @@
 // v2-specific error codes for 3CP protocol.
 package validation
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/had-nu/gleipnir/pkg/chain"
+)
 
 // v2.0 Consensus Errors
 var (
@@ -148,6 +152,25 @@ var (
 
 	// ErrMinValidatorsNotMet is returned when initial validators < MinValidators.
 	ErrMinValidatorsNotMet = errors.New("3cp: initial validators less than MinValidators")
+
+	// ErrReservedFieldPresent is returned when a v2 block carries key 8, which §5.3
+	// reserves in ProtocolVersion == 2.
+	//
+	// "Sigs" was the PREPARE-signature field in v1.0. In v2 its meaning moved to
+	// PrepareSigsBitmap (13) and PrepareSigsPayload (14), and key 8 is reserved so the
+	// two eras can never be confused within one network — §5.3: "Key 8 never has two
+	// meanings within the same network: v1→v2 migration is a hard fork, not a gradual
+	// field-semantics transition."
+	//
+	// A block carrying it is rejected rather than ignored. Gleipnir never emits key 8,
+	// and a decoder that silently drops it cannot distinguish a conformant v2 block
+	// from one that a v1 emitter produced, which is precisely the ambiguity §5.3
+	// exists to remove.
+	//
+	// Aliased rather than declared separately: pkg/validation imports pkg/chain, so the
+	// sentinel is defined at the point of use and re-exported here. Two distinct error
+	// values would make errors.Is fail across the package boundary.
+	ErrReservedFieldPresent = chain.ErrReservedFieldPresent
 )
 
 // IsV2Error checks if an error is a v2.0-specific error.

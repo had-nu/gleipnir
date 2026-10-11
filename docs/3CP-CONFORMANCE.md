@@ -5,7 +5,8 @@ record that it is not implemented. So that conformance is a claim that can be ch
 rather than an assertion about code nobody has read against the spec.
 
 **Specification**: `had-nu/3CP`, `spec/3CP-v2.md`, commit `72a5e4b` (2026-10-05).
-Cached at `~/.cache/3cp/3CP-v2.md`.
+Fetch it with `./scripts/fetch-3cp.sh`, which caches it in `.3cp/` (gitignored — the spec
+is canon and a vendored copy drifts). Cite `.3cp/3CP-v2.md`.
 
 **Why this exists.** The code in this repository cites spec sections in comments, but
 never systematically. Three consecutive defects were diagnosed by reading code rather
@@ -277,10 +278,29 @@ gap is on the verification path, which is the path an auditor relies on.
 This is the §17 migration guarantee resting on an unstated convention. §5.3 closes with:
 *"Key 8 never has two meanings within the same network: v1→v2 migration is a hard fork, not a
 gradual field-semantics transition."* The convention holds only if every implementation
-enforces it, and this one does not.
+enforces it, and this one did not.
 
-**Not yet fixed.** The fix is to decode with a mode that surfaces unknown keys, or to inspect
-the raw map before decoding into the struct, and to add the error to `pkg/validation/errors_v2.go`.
+**Fixed** in `pkg/chain/cbor.go`. `UnmarshalCBOR` now calls `rejectReservedKeys` before
+decoding, which inspects the raw map and refuses key 8 when `ProtocolVersion == 2` and the
+value is not null.
+
+Scoped to key 8 rather than to every unknown key. §5.3 reserves this one field, and a
+decoder that refused all unknown keys would reject extensions the spec has not discussed —
+which is a different defect, not a stricter reading of this one.
+
+`ErrReservedFieldPresent` is defined in `pkg/chain` because `pkg/validation` imports
+`pkg/chain` and the dependency cannot run the other way. `validation.ErrReservedFieldPresent`
+aliases it rather than declaring a second value, so `errors.Is` works across the boundary.
+
+`TestAcceptsBlocksTheSpecAllows` pins the four cases this must not break, each of which the
+spec requires the decoder to accept:
+
+| Case | §5.3 |
+|---|---|
+| v2 without key 8 | valid |
+| v1 carrying key 8 | §5.3 scopes the reservation to `ProtocolVersion == 2` |
+| v2 with key 8 explicitly null | rejects "present and **non-null**" |
+| unknown non-reserved keys | §5.3 reserves key 8 only |
 
 ### D7 — Mandatory anchor backends are stubs, and they are a MUST violation
 
@@ -329,7 +349,7 @@ Before implementing anything in the consensus path:
 4. If it does not appear at all, the spec may not cover it. Say that explicitly rather
    than implementing from intuition.
 
-When adding a comment that cites a section, verify the quote against `~/.cache/3cp/3CP-v2.md`.
+When adding a comment that cites a section, verify the quote against `.3cp/3CP-v2.md`.
 Section numbers match between the PT and EN files but their contents do not (§6.5 is the
 clearest case).
 

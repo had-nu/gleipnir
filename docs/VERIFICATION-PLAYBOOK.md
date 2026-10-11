@@ -117,14 +117,19 @@ Three things make a claim checkable:
 > **Rule 2 — Every change to protocol behaviour cites the 3CP section that governs it.
 > Look the requirement up. Do not infer it from the code.**
 
-The specification is `had-nu/3CP`, `spec/3CP-v2.md`. It is public and readable:
+The specification is `had-nu/3CP`, `spec/3CP-v2.md`. It is public, and it is cached:
 
 ```
-gh api repos/had-nu/3CP/contents/spec/3CP-v2.md --jq '.content' | base64 -d
+./scripts/fetch-3cp.sh            # fetch or refresh into .3cp/
+./scripts/fetch-3cp.sh --check    # verify the cache is present
 ```
 
-`docs/3CP-CONFORMANCE.md` maps each section to the code and lists five open divergences
-(D1–D5). Read it before touching the consensus path.
+`.3cp/` is gitignored. The spec is canon; vendoring a second copy into the repository is
+what produces a stale one, and a stale spec is worse than none — a citation drawn from the
+wrong version still looks right.
+
+`docs/3CP-CONFORMANCE.md` maps each section to the code and lists the open divergences
+(D1–D7). Read it before touching the consensus path.
 
 Two rules of use:
 
