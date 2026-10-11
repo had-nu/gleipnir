@@ -190,15 +190,29 @@ jobs:
 
       - name: Wait for validators
         run: |
-          for i in $(seq 1 60); do
-            if docker compose -f docker-compose.yml -f docker-compose.test.yml logs val-1 2>/dev/null \
-                 | grep -q "gRPC server listening"; then
-              echo "validators up after ${i}s"
+          # `validator-1` is the compose service name. `val-1` is only its
+          # container_name, and `compose logs val-1` fails with "no such service"
+          # while returning nothing at all -- so a grep over it can never match and
+          # the wait times out even though every node is healthy. The Makefile has
+          # the same call and hid it behind 2>/dev/null.
+          #
+          # Waits for all five, not one: a single node listening does not mean the
+          # mesh is up, and the conformance run needs every validator.
+          for i in $(seq 1 90); do
+            ready=0
+            for svc in validator-1 validator-2 validator-3 validator-4 validator-5; do
+              if docker compose -f docker-compose.yml -f docker-compose.test.yml logs "$svc" 2>/dev/null \
+                   | grep -q "gRPC server listening"; then
+                ready=$((ready + 1))
+              fi
+            done
+            if [ "$ready" -eq 5 ]; then
+              echo "all 5 validators listening after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "::error::validators did not start within 60s"
+          echo "::error::validators did not all start within 90s (logs follow)"
           docker compose -f docker-compose.yml -f docker-compose.test.yml ps
           docker compose -f docker-compose.yml -f docker-compose.test.yml logs --tail=50
           exit 1

@@ -70,8 +70,19 @@ docker-ps:
 docker-conformance:
 	docker compose -f docker-compose.yml -f docker-compose.test.yml up --detach --build
 	@echo "Waiting for validators..."
-	@for i in $$(seq 1 30); do \
-		if docker compose -f docker-compose.yml -f docker-compose.test.yml logs val-1 2>/dev/null | grep -q "listening"; then \
+	@# validator-1 is the compose service name; val-1 is only its container_name,
+	@# and `compose logs val-1` fails with "no such service". The old 2>/dev/null
+	@# sent that error to /dev/null, so the loop always ran to completion and this
+	@# target looked like it had waited for the topology.
+	@for i in $$(seq 1 90); do \
+		ready=0; \
+		for svc in validator-1 validator-2 validator-3 validator-4 validator-5; do \
+			if docker compose -f docker-compose.yml -f docker-compose.test.yml logs $$svc 2>/dev/null | grep -q "gRPC server listening"; then \
+				ready=$$((ready + 1)); \
+			fi; \
+		done; \
+		if [ $$ready -eq 5 ]; then \
+			echo "all 5 validators listening after $$i s"; \
 			break; \
 		fi; \
 		sleep 1; \
