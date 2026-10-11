@@ -1,3 +1,18 @@
+// IPC peer transport — KEM handshake plus AEAD framing.
+//
+// Implements §4.4 and §4.5:
+//
+//	**[MUST]** (4.4) "Used exclusively for secure transport handshake between peers
+//	(Kyber encapsulate/decapsulate + AEAD)."
+//
+//	**[MUST]** (4.5) "ChaCha20-Poly1305 (RFC 8439) ... Used for transport encryption after
+//	Kyber handshake. The 32-byte key is derived via HKDF-SHA256 from the Kyber shared
+//	secret."
+//
+// Both halves are the spec's, not a local choice: the AEAD is RFC 8439 rather than AES-GCM,
+// and the key derivation is HKDF-SHA256 over the ML-KEM-1024 shared secret (FIPS 203) with
+// an explicit context string and both peer identities as info, which is the domain
+// separation RFC 5869 requires.
 package transport
 
 import (

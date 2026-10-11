@@ -1,4 +1,13 @@
 // Power iteration for λ₁ (Fiedler eigenvalue) computation.
+//
+// §11.1 defines λ₁ as the smallest non-zero eigenvalue of the graph Laplacian. The spec
+// does not mandate an algorithm; §11.3 *permits* Lanczos for N > 100 and says nothing
+// about N <= 100, so power iteration here is a choice rather than a divergence.
+//
+// One consequence worth stating: power iteration converges to the eigenvalue of largest
+// magnitude, so this computes the shifted spectrum and the caller takes the smallest
+// non-trivial result. That is not λ₁ for a disconnected graph, where the correct answer is
+// 0 and §11.4 then applies. `computeLambda1` documents the case it handles.
 package state
 
 import (

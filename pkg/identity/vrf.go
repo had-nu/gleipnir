@@ -4,6 +4,27 @@
 // Proof shape and wire format are the RFC's: pi = (Gamma, c, s), three 32-byte
 // scalars/points, so MarshalVRFProof still emits 96 bytes.
 //
+// ## Relation to 3CP §4.3, and where it departs from RFC 9381
+//
+// The spec mandates Ristretto255 with suite `ristretto255_XMD:SHA-512_R255MAP_RO_`, and
+// deviates from the RFC in one place that it states twice and calls out as a MUST:
+//
+//	**[MUST]** `HashToCurve(alpha)` is computed as ... a 2-point Elligator2 sum ...
+//	This is a 2-point Elligator2 sum, not the single-point map of RFC 9381 §4.1.2.
+//	**[MUST]** Every conformant implementation MUST replicate exactly this 2-point
+//	procedure for interoperability.
+//
+// `hashToCurve` below does the 2-point sum (`p0.Add(p0, p1)`). An implementation that
+// follows RFC 9381 §4.1.2 literally computes a different point and elects a different
+// leader for the same alpha, because the VRF output — and therefore the whole election —
+// depends on it. **When reading this file, the spec wins over the RFC where they
+// disagree.** That inversion is deliberate and is stated in the spec; do not "correct"
+// it toward the RFC.
+//
+// **[MUST]** Nonce derivation is deterministic via HMAC-SHA512 with the VRF private key as
+// the HMAC key, and the challenge/response follow Schnorr-style construction rather than
+// the IETF ECVRF-EDWARDS25519 bitwise one. Both are implemented below.
+//
 // Proof generation:
 //
 //	x = secret scalar,  Y = x*B  (the registered VRF public key)

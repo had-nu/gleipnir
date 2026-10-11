@@ -1,3 +1,19 @@
+// Sparse Merkle Tree — §9.
+//
+// §9.1 fixes the parameters: depth 256, `BLAKE3("leaf" || key || value)` for a leaf,
+// `BLAKE3(left || right)` for an interior node. The literal "leaf" prefix is domain
+// separation between the two, and it is the spec's — an implementation that hashes the
+// key and value directly produces a different root and fails every proof a third party
+// checks.
+//
+// §9.3 gives the verification walk: for depth 0..255, take the sibling from the proof and
+// the path bit from the key, and hash current||sibling when the bit is 0 and
+// sibling||current when it is 1. `Verify` implements it in that order, because a
+// commutative implementation would accept proofs the spec's verifier rejects.
+//
+// Depth is a constructor parameter rather than the literal 256 so a tree can be built
+// small in tests. 256 is the default used in production (`state.DefaultConfig`), and §9.2's
+// "[MUST] An SMT proof is an array of 256 32-byte hashes" holds at that depth.
 package smt
 
 import (

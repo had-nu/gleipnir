@@ -1,4 +1,16 @@
 // Genesis block and NetworkID computation for 3CP v2.0.
+// Genesis construction — §7.1 and §14.1.
+//
+//	**[MUST]** (14.1) "NetworkID is the BLAKE3-256 hash of the genesis block:
+//	            NetworkID = BLAKE3-256(GenesisBlock)"
+//	**[MUST]** (14.1) "NetworkID is immutable for the chain's lifetime."
+//
+// The first is what `NetworkIDFromGenesis` does. The second is a property of the operator
+// rather than of this code: nothing here can stop a genesis block being regenerated, so
+// the immutability guarantee rests on keeping the genesis CBOR.
+//
+// The hash is over the canonical CBOR of the genesis block, so byte order and map
+// ordering are fixed by the encoder rather than by the caller's marshalling.
 package protocol
 
 import (

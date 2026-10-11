@@ -243,6 +243,21 @@ func (s *Service) StreamBlocks(ctx context.Context, startIndex uint64) (<-chan *
 // from the trusted validator set, and checkValidatorSet has already established that the
 // block declares the same identities. A block in a chain of four or more cannot lower its
 // own quorum by labelling itself degraded.
+// VerifyBlock checks a block without executing consensus, per §12.2:
+//
+//	**[MUST]** A light client verifies a block B without executing consensus:
+//	1. Obtains ValidatorSet for cycle B.Index.
+//	2. Verifies B.PrepareSigsPayload contains Q = ceil(2N/3) valid signatures against
+//	   ValidatorSet keys (using PrepareSigsBitmap to map each entry to its validator).
+//	3. Verifies B.CommitSig against B.Proposer.
+//	4. Verifies the PrevHash chain.
+//
+// The order below differs from the spec's listing and deliberately so. §15.4 requires
+// that "verification MUST NOT derive the validator set from the block being verified ...
+// A block that names its own validators can be signed entirely by whoever wrote it", so
+// the anchor is checked before the block is trusted for anything, and the block hash is
+// recomputed before any signature is examined. A verifier that checked a signature first
+// would be verifying the proposer's own account of the block rather than the block.
 func (s *Service) VerifyBlock(block *chain.Block, anchor TrustAnchor) error {
 	if block == nil {
 		return ErrBlockNotFound

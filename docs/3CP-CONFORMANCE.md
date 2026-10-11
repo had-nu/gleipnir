@@ -336,6 +336,56 @@ they can be verified rather than merely written. That is a sequencing constraint
 exemption: until it is satisfied, Gleipnir is not §12.1-conformant and should not be described
 as such.
 
+### D8 — UID0 HKDF info strings are not the spec's
+
+**Spec** §14.2:
+
+> **[MUST]** The 32-byte seed for identity derivation is:
+> `seed = HKDF-SHA256(salt = NetworkID, info = "3cp-uid0-v2", ikm = entropySource)`
+
+**Code** `pkg/identity/uid0.go:53-59`. The PRK is derived from the spec's salt and IKM, then
+expanded under four info strings of the implementation's own:
+
+```
+"3cp:v2:dilithium3"   "3cp:v2:vrf"   "3cp:v2:rootid"   "3cp:v2:contract"
+```
+
+The string `"3cp-uid0-v2"` appears nowhere in the repository (`grep -rn "3cp-uid0-v2" --include='*.go'`
+returns nothing).
+
+**Consequence.** Two implementations that agree on the PRK and disagree on the info derive
+different identities — different RootID, different Dilithium key, different VRF key. That is
+the interoperability break §4.3's two-point Elligator MUST exists to prevent, one layer up:
+§4.3 states it explicitly because the same input must produce the same election everywhere,
+and this is the same failure in the identity layer.
+
+**Blast radius.** Every UID0 generated under these strings has a different identity than the
+spec prescribes. `provectl init` produces them, so the shipped five-validator topology runs
+on non-conformant identities. Changing the strings invalidates them, which makes this a
+migration, not a patch.
+
+**Not fixed here.** The direction is unambiguous — the spec's string is the one to use — but
+the change needs a decision about existing identities that is not mine to make.
+
+### D9 — the UID0 entropy floor is a length check
+
+**Spec** §14.2:
+
+> **[MUST]** `entropySource` MUST contain at least 128 bits of effective entropy.
+> Implementations SHOULD reject `entropySource` with estimated entropy < 80 bits.
+
+**Code** `pkg/identity/uid0.go:47` — `if !simulated && len(entropySource) < 32`. A 32-byte
+string of a single repeated character satisfies this and carries no entropy.
+
+The MUST is about *effective* entropy and cannot be decided by length. The SHOULD is about an
+*estimate*, which no code here performs.
+
+**Escape hatch.** `simulated=true` skips the check entirely, which is what the compose
+topology relies on through `IPC_ALLOW_SIMULATED_IDENTITIES`. That is a reasonable test
+affordance and the flag is visible on the wire (`cbor:"7,keyasint"` on `UIDZeroSoulbound`),
+so a node using it is identifiable rather than silently weakened. It does mean a production
+deployment could enable it and never be noticed by the protocol.
+
 ---
 
 ## How to use this document
