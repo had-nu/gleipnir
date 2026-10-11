@@ -77,7 +77,11 @@ func parsePeers(spec string, selfUID *identity.UIDZeroSoulbound, selfAddr string
 		}
 		seen[addr] = true
 
-		data, err := os.ReadFile(uidPath)
+		// #nosec G304 -- uidPath is the operator's own --peers flag, the same trust
+		// level as --uid-file on this command. The file it names holds the peer's
+		// public identity, and reading it is what the flag is for. No untrusted input
+		// reaches this path.
+		data, err := os.ReadFile(uidPath) //nolint:gosec
 		if err != nil {
 			return nil, fmt.Errorf("peer %s: %w", addr, err)
 		}
