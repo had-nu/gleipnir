@@ -46,7 +46,14 @@ than padding it.
 Each item is a deliberate boundary. They are documented so that a later reader does not mistake
 them for oversights.
 
-### 2.1 IPFS and S3 anchoring are stubs
+### 2.1 IPFS and S3 anchoring are stubs — **reclassified as Category 3 on 2026-10-11**
+
+> **This item was in the wrong category.** §12.1 of the 3CP specification lists the anchor
+> backends as **[MUST]**: local filesystem, IPFS, and S3. A documented constraint on a MUST is
+> an unimplemented requirement, not a legitimate boundary — the spec offers no exemption for
+> "requires credentials". It is now recorded as divergence **D7** in
+> `docs/3CP-CONFORMANCE.md`. The reasoning below is kept because the sequencing difficulty is
+> real; the classification is not.
 
 `pkg/anchor/anchor.go:257` reads `// TODO: Implement actual IPFS client connection`, and
 `NewIPFSPublisher` returns "a publisher that simulates IPFS publishing". `NewS3Publisher`

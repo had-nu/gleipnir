@@ -243,6 +243,79 @@ Note that `engine.go:566-571` already records the related §6.2/§6.4 contradict
 alpha. The index-advance question is the same contradiction seen from the other side, and
 the two comments should be reconciled.
 
+### D6 — Reserved key 8 is not rejected on decode
+
+**Spec** §5.3:
+
+> **[MUST]** Key 8 (`Sigs` in v1.0) is **reserved and MUST NOT be used** in blocks with
+> `ProtocolVersion == 2`. A block with `ProtocolVersion == 2` and key 8 present and
+> non-null **MUST** be rejected with `ErrReservedFieldPresent`.
+
+**Code** `pkg/chain/cbor.go:26-32`. `UnmarshalCBOR` calls `cbor.Unmarshal` into a `Block`.
+The `Block` struct has no field for key 8 — correctly, since Gleipnir never emits it — so the
+CBOR library discards it silently.
+
+The requirement has two halves and only one is met. Not emitting the field is satisfied.
+Rejecting a block that carries it is not, because nothing inspects for it.
+
+**Measured.** `TestRejectsReservedKey8InV2Block` in `pkg/chain/reserved_field_test.go`:
+
+```
+a v2 block carrying reserved key 8 was accepted and decoded as ProtocolVersion=2;
+3CP §5.3 requires rejection with ErrReservedFieldPresent
+```
+
+The baseline is checked first — a valid v2 block without key 8 decodes fine — so the failure
+is specific to the reserved key and not to the fixture.
+
+`ErrReservedFieldPresent` does not exist anywhere in the repository. Nothing can return it.
+
+**Reach.** `pkg/lightclient/service.go:250` rejects a `ProtocolVersion != 2` block but has no
+check for key 8, so a third-party verifier accepts what the spec says must be rejected. The
+gap is on the verification path, which is the path an auditor relies on.
+
+This is the §17 migration guarantee resting on an unstated convention. §5.3 closes with:
+*"Key 8 never has two meanings within the same network: v1→v2 migration is a hard fork, not a
+gradual field-semantics transition."* The convention holds only if every implementation
+enforces it, and this one does not.
+
+**Not yet fixed.** The fix is to decode with a mode that surfaces unknown keys, or to inspect
+the raw map before decoding into the struct, and to add the error to `pkg/validation/errors_v2.go`.
+
+### D7 — Mandatory anchor backends are stubs, and they are a MUST violation
+
+**Spec** §12.1:
+
+> **[MUST]** Mandatory backends: Local filesystem, IPFS (CIDv1, codec `raw`, hash `blake3-256`
+> or `sha2-256`), S3-compatible blob store (with SHA-256 checksum).
+
+All three are mandatory. There is no "if configured" qualifier.
+
+**Code** `pkg/anchor/anchor.go:257` reads `// TODO: Implement actual IPFS client connection`,
+and `NewIPFSPublisher` returns a publisher that simulates publishing. `NewS3Publisher`
+(`anchor.go:333`) is in the same state. Only `NewFilesystemPublisher` (`anchor.go:187`) works,
+and it is what `consensus/engine.go` actually uses.
+
+**This is a correction to `IMPLEMENTATION-STATUS.md` §2.1**, which classifies the IPFS and S3
+stubs under *"Not attempted because of a real constraint"* — legitimate engineering boundaries
+to be documented rather than fixed. That classification is wrong on the spec's own terms: §12.1
+says MUST, not SHOULD, and the spec does not offer an out for "requires credentials".
+
+The reasoning behind the original classification still holds as an implementation constraint —
+no test can distinguish a working publisher from a broken one without a peer or an account. But
+a documented constraint on a SHOULD is a decision; a documented constraint on a MUST is an
+unimplemented requirement. It belongs in this section, not in the constraints.
+
+**Consequence for an auditor.** §12.3 makes third-party verification depend on blocks being
+published where an auditor can read them. With one of three mandatory backends unimplemented
+and two simulated, the property the README offers an auditor rests on a backend that writes to
+a local directory.
+
+**Not fixed here.** Both need infrastructure — an IPFS peer in CI, a MinIO container — before
+they can be verified rather than merely written. That is a sequencing constraint, not an
+exemption: until it is satisfied, Gleipnir is not §12.1-conformant and should not be described
+as such.
+
 ---
 
 ## How to use this document
@@ -259,3 +332,15 @@ Before implementing anything in the consensus path:
 When adding a comment that cites a section, verify the quote against `~/.cache/3cp/3CP-v2.md`.
 Section numbers match between the PT and EN files but their contents do not (§6.5 is the
 clearest case).
+
+## Coverage
+
+This document currently maps §6, §10 and the parts of §15, §8 and §12 that were audited
+while closing the 2026-08-25 compliance report's three gaps. Those three are confirmed
+closed against the code: key rotation (`pkg/chain/key_rotation.go`), mandate authority and ID
+recomputation (`pkg/validation/mandate_authority.go`, which calls `VerifyHash` rather than
+trusting the stored identifier), and the light client service (`pkg/lightclient/service.go`).
+
+Sections not yet mapped: §4 (primitives), §7 (network state), §9 (SMT), §11 (λ₁), §13 (ZK
+Bridge), §14 (UID0). They are not claimed compliant — they are simply not yet audited
+against the text. Treat an absent section as unexamined, not as passing.
