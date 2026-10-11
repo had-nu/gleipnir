@@ -291,32 +291,50 @@ under `-short`, which the CI race job already uses but the main test job does no
 **Severity: critical. This is the reason 17 of 33 conformance cases fail, and it is now the
 highest-value item in this document.**
 
-Found by running the five-validator topology at `79577ad`, not by reading the code. The transport
-and the VRF election both work; the cycle cannot complete.
+> **Correction.** An earlier revision of this item attributed the failure to a dependency cycle
+> between PHASE 2 and PHASE 3 in `RunCycle`. That was a reading of the code, not a measurement,
+> and it was wrong. Reproduced under test, the proposer's quorum check completes; what fails is
+> that validators exhaust their wait for the proposal before it has been delivered. Both accounts
+> predict the same symptom, which is why reading the code was not enough to tell them apart.
 
-`pkg/consensus/engine.go:692-714` runs two `RunPreparePhase` calls and then `RunCommitPhase`:
+Found by running the five-validator topology at `79577ad`. The transport and the VRF election both
+work; the cycle cannot complete against a network that has any latency at all.
 
-```go
-prepareResult := e.RunPreparePhase(cycle, rootArr, allPending, false, requiredQuorum)  // PHASE 1
-prepareResult = e.RunPreparePhase(cycle, rootArr, allPending, true,  requiredQuorum)   // PHASE 2
-commitResult  := e.RunCommitPhase(cycle, prepareResult)                                 // PHASE 3
+**Reproduction.** `TestCycleCompletesWithDelayedDelivery` in
+`pkg/consensus/phase_deadlock_test.go`, against `networkBus` in `network_bus_test.go`:
+
+| Bus | Result |
+|---|---|
+| `MemoryBus` (in-process) | all five nodes commit a block |
+| `networkBus`, 20ms delivery delay | no node commits anything |
+
+`MemoryBus` hands a `Publish` to every other engine inside the same goroutine, so a signature is
+visible to the proposer before any of them has yielded. Nothing can happen in the gap. The
+delayed bus is identical in every respect except that a published message becomes visible to the
+next reader one round trip later — which is the only difference between it and the libp2p
+transport.
+
+**The measured sequence.** Instrumenting `Propose` and `GetProposed` on the delayed bus, with a
+50ms delay and three nodes:
+
+```
+GetProposed cycle=0 -> false     × 8     validators in PHASE 1, polling for the proposal
+Propose cycle=0 by=a9491599              the proposer publishes
+GetProposed cycle=0 -> false     × 50    validators still polling, 50ms elapsed
+GetProposed cycle=0 -> true      × 4     finally delivered
 ```
 
-The dependency cycle between them:
+The proposal is published immediately — one line into the trace. It arrives late. The validators'
+`waitForProposal` budget is `proposalWait()`, which is `cycleTimeout/4` (10s/4 = 2.5s at the
+default cycle timeout), but each poll of `waitForProposal` calls `GetProposed`, and the effective
+window is spent before the proposer's own VRF exchange completes: every validator runs
+`RunPreparePhase` twice, and the second pass re-enters the same wait with whatever budget remains.
 
-1. **PHASE 1** — the elected proposer builds and broadcasts the candidate block (`prepare.go:110-204`).
-   Every validator then reads it, verifies it, and publishes its PREPARE signature
-   (`prepare.go:205-246`).
-2. **PHASE 2** — called again with `checkQuorum=true`. On the proposer this collects signatures and
-   waits for quorum (`prepare.go:313-322`). On a validator it re-reads the proposal and re-signs.
-3. **PHASE 3** — the proposer publishes `B_final` (`commit.go:33-77`). Validators wait for it
-   (`commit.go:88`).
+The proposer then reads `GetProposed(cycle)` for itself in its own second pass
+(`prepare.go:117`). That read succeeds — both `MemoryBus` and `GossipBus` store a proposal locally
+on `Propose`. The quorum is not the failure; the proposal is not *arriving*.
 
-A validator only reaches PHASE 3 **after** finishing its own PHASE 2. The proposer's PHASE 2 only
-completes **once** it has quorum. So the quorum is gated behind validators that are themselves
-waiting. The proposer times out, aborts, reverts — and never enters another cycle.
-
-Measured on val-2, which was elected proposer for cycle 0:
+Measured on the live topology, the same failure from the other side:
 
 ```
 17:17:13 IPC cycle 0: COMMIT failed: PREPARE quorum not reached
@@ -324,33 +342,32 @@ Measured on val-2, which was elected proposer for cycle 0:
 17:17:22 IPC cycle 0: COMMIT failed: no B_final from leader     (repeats every 3s, indefinitely)
 ```
 
-and val-1, in the same seconds:
+and under test:
 
 ```
-17:17:11 vrf proof: cycle=0 signer=6fb48e7d... accepted from 12D3KooWJHQRm9...
-17:17:11 vrf proof: cycle=0 signer=39770acb... accepted from 12D3KooWFWRzHtU...
-17:17:11 vrf proof: cycle=0 signer=0085dc9e... accepted from 12D3KooWGYrR6Gu...
-17:17:12 vrf proof: cycle=0 signer=be38df14... accepted from 12D3KooWPHmJRmc...
-17:17:12 gossip vrf proof: cycle=0 signer=6a42d717... to 4 peer(s)
-17:17:20 IPC cycle 1: PREPARE failed: ... incomplete proof set: no proof from be38df14...
+IPC cycle 0: QUORUM CHECK failed: no proposal from proposer for quorum check
+IPC cycle 0: COMMIT failed: no B_final from leader
 ```
 
-The four VRF proofs arrive within a second — VRF election works. Cycle 0 completes once, one block
-finalises (`block_height: 1`, non-zero `state_root`). From cycle 1 onwards val-2 has stopped
-publishing proofs because it never gets past PHASE 2, and the remaining four starve waiting for a
-proof that will never come.
+**Why the network stops after one block.** The proposer aborts and reverts. `e.state.Cycle++`
+advances the attempt counter but `nextCycleLocked()` is `len(e.blocks)`, which did not change, so
+the next cycle retries the same number — and the proposer, having not committed, re-enters
+`RunPreparePhase` and fails identically. The topology produces one block and then holds.
 
-**The asymmetry is the signature of this defect.** Each node names a *different* missing peer
-(val-1 and val-3 name val-2, val-5 names val-4), which is what distinguishes an ordering deadlock
-from a transport failure — a transport failure names the same unreachable peer everywhere.
+**Fix.** Not yet attempted. The two candidate directions, neither of which has been implemented or
+measured:
 
-**Fix.** Either re-order PHASE 2 so validators publish their signatures before the proposer
-evaluates quorum, or have the proposer publish `B_final` without waiting on a quorum that depends
-on it. This is a change to protocol flow, not a patch. The documented sequence in
-`docs/ARCHITECTURE-v2.md` §5 shows the intended order and the code does not implement it.
+- Make the proposal wait cover the proposer's own VRF exchange, so validators are still waiting
+  when the block is published. This is a timeout change, and a timeout that happens to be long
+  enough on one machine is not a fix — it would fail again on a slower runner.
+- Separate the propose step from the vote-collection step so a validator publishes its signature as
+  soon as it has verified the block, rather than re-entering `RunPreparePhase` and re-waiting.
 
-**Guard.** The `topology` job in `.github/workflows/ci.yml` records block height and the pass count
-as artifacts, so a change here is measurable rather than argued about.
+The second is a change to protocol flow. The first is a change that needs a measurement to justify.
+
+**Guard.** `TestCycleCompletesWithDelayedDelivery` fails today and must pass before this is closed.
+The `topology` job in `.github/workflows/ci.yml` records block height and the pass count as
+artifacts, so the change is measurable rather than argued about.
 
 ### 3.11 The conformance suite cannot fail a build
 
