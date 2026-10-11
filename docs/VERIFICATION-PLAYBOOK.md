@@ -86,10 +86,19 @@ predict the same symptom, which is why reading code could not distinguish them.
 The error was not reading the code carelessly. It was **never opening the specification**.
 `docs/IMPLEMENTATION-STATUS.md` §2.2 recorded that 3CP lives in another repository and is
 therefore not consultable. That was written on 2026-10-05 and it stopped being true:
-`had-nu/3CP` is public. §6 of `spec/3CP-v2.md` describes the cycle in six steps, and reading
-it shows immediately that the code's two `RunPreparePhase` calls are not what the spec
-describes, and that `waitForProposal` — whose expiry causes the failure — has no basis in the
-spec at all.
+`had-nu/3CP` is reachable, and `./scripts/fetch-3cp.sh` now caches it. §6 of the spec
+describes the cycle in six steps, and reading it shows immediately that the code's two
+`RunPreparePhase` calls are not what the spec describes, and that `waitForProposal` — whose
+expiry causes the failure — has no basis in the spec at all.
+
+It then went further, and the sequence is the argument for this rule: once the spec was open,
+this file cited the **wrong one of two documents** in that repository, called it normative,
+and wrote its reasoning into a code comment as fact. Both documents exist,
+`spec/SPEC-3CP-V2.md` and `spec/3CP-v2.md`, and they contradict each other. The claim
+recorded in the comment — "the spec departs from RFC 9381, do not correct it toward the RFC"
+— was not in either document, and was wrong; checked against RFC 9380 §3, the construction
+in the code *is* RFC 9380. No test would ever have caught that, because the code was right.
+Only reading the RFC as well as the spec did.
 
 Reading the code was never a substitute for reading the spec. They answer different questions.
 The code says what happens; the spec says what should happen. Only the second can tell you the
@@ -117,7 +126,7 @@ Three things make a claim checkable:
 > **Rule 2 — Every change to protocol behaviour cites the 3CP section that governs it.
 > Look the requirement up. Do not infer it from the code.**
 
-The specification is `had-nu/3CP`, `spec/3CP-v2.md`. It is public, and it is cached:
+The specification is `had-nu/3CP`, `spec/SPEC-3CP-V2.md`. It is cached:
 
 ```
 ./scripts/fetch-3cp.sh            # fetch or refresh into .3cp/
@@ -128,14 +137,33 @@ The specification is `had-nu/3CP`, `spec/3CP-v2.md`. It is public, and it is cac
 what produces a stale one, and a stale spec is worse than none — a citation drawn from the
 wrong version still looks right.
 
+The hierarchy is not flat:
+
+```
+3CP RFC                              ← source of truth
+  ↓ must be followed structurally
+spec/SPEC-3CP-V2.md                  ← normative spec; an implementation *attempt*
+  ↓ may exceed, if documented and heavily tested
+Gleipnir                             ← this repository
+```
+
+Where the **RFC and the spec disagree, the RFC wins.** Where **Gleipnir is more efficient
+than the spec anticipated**, that is legitimate — but it must be documented and heavily
+tested *before* being reflected into the RFC. A silent divergence is not an improvement,
+it is a fork. Correcting the spec is a normative act handled in the 3CP repository, never
+from here.
+
 `docs/3CP-CONFORMANCE.md` maps each section to the code and lists the open divergences
-(D1–D7). Read it before touching the consensus path.
+(D1–D10). Read it before touching the consensus path.
 
-Two rules of use:
+Three rules of use:
 
-- **Verify the quote, not the section number.** `SPEC-3CP-V2.md` (PT) and `3CP-v2.md` (EN)
-  have matching section numbers and differing content — §6.5 in EN carries a MUST the PT
-  omits. Cite `3CP-v2.md`.
+- **Cite `SPEC-3CP-V2.md`, not `3CP-v2.md`.** Both exist in the 3CP repository and they
+  contradict each other in §2, §4, §6 and §6.5. The README and CONTRIBUTING name
+  `SPEC-3CP-V2.md` as normative. See D10.
+- **Verify the quote against the RFCs as well as the spec.** The spec cites RFC 9380 and
+  RFC 9381 for the VRF, and its explanation of the construction was wrong. A citation that
+  reads plausibly is not a citation that was checked.
 - **If a change is not in the spec, say so explicitly** and justify it on measured
   behaviour. Adding a timeout the spec does not define is a protocol change, and "it seemed
   like the right amount" is not a justification.
@@ -304,8 +332,12 @@ it measured. Two statements in it should be read with care:
 - It predates any measurement of mDNS on the compose topology. Any inference in it about
   peer discovery being absent is unmeasured and should not be relied on. The measurement
   in §1.3 above supersedes it.
-- **§2.2 states that the 3CP specification is not consultable.** It is public. Use
-  `docs/3CP-CONFORMANCE.md` instead.
+- **§2.2's conclusion no longer holds, but its reason was right.** It says the
+  specification is not consultable because it lives in another repository. That is still
+  why it was never read. It *is* reachable — `./scripts/fetch-3cp.sh` caches it — but note
+  that the 3CP repository's own `README.md` and `CONTRIBUTING.md` describe it as **private
+  and pre-publication**. It is reachable here only because the authenticated `gh` account
+  has access. Do not describe it as public. Use `docs/3CP-CONFORMANCE.md`.
 
 ---
 
@@ -320,7 +352,7 @@ For a change to this repository, in order:
 5. Does the conformance count match what the message claims about it?
 6. If the change is a fix, is there a stated residual problem?
 7. **If the change touches the consensus path, does it cite the 3CP section it implements —
-   and does that quote match `3CP-v2.md`?**
+   and does that quote match `SPEC-3CP-V2.md`, and the RFCs it in turn cites?**
 8. **If the change is not described by the spec, is that stated, with the measured
    justification?**
 

@@ -1,26 +1,38 @@
 #!/bin/sh
 # Fetch the 3CP specification into .3cp/ so it is available to read offline.
 #
-# The spec is canon and lives at github.com/had-nu/3CP. It is deliberately NOT vendored
-# into this repository: a second copy drifts from the first, and a stale copy is worse
-# than none. Five defects here were diagnosed by reading code instead of the canon; this
-# script exists so the canon is one command away rather than an assumption.
+# Hierarchy, from the protocol outward:
+#
+#   1. The 3CP RFC is the source of truth.
+#   2. spec/SPEC-3CP-V2.md is the normative spec: an implementation *attempt* that must
+#      follow the RFC structurally. Where spec and RFC disagree, the RFC wins.
+#   3. Gleipnir implements the spec. Where Gleipnir is more efficient than the spec
+#      anticipated, that is legitimate — but it must be documented and heavily tested
+#      before being reflected back into the RFC. A silent divergence is not allowed.
+#
+# The spec is deliberately NOT vendored here: a second copy drifts from the first, and a
+# stale copy is worse than none. Five defects here were diagnosed by reading code instead
+# of the canon; this script exists so the canon is one command away rather than an
+# assumption.
 #
 #   ./scripts/fetch-3cp.sh          # fetch or refresh
-#   ./scripts/fetch-3cp.sh --check  # verify the cached copy is current, do not fetch
+#   ./scripts/fetch-3cp.sh --check  # verify the cached copy is present
 #
 # Requires gh (authenticated) or curl to raw.githubusercontent.com.
 #
-# Both language versions are fetched. 3CP-v2.md (EN) is the normative one and is what
-# docs/3CP-CONFORMANCE.md cites: the PT file has matching section numbers but differing
-# content, so citing the wrong one yields a wrong citation that still looks right.
+# SPEC-3CP-V2.md is the canonical file — the 3CP README calls it "Current normative
+# specification" and CONTRIBUTING.md routes every normative change to it. 3CP-v2.md is a
+# second, newer document whose §4.3 contradicts the canonical one on the VRF construction
+# and whose §6.4 contradicts §6.2 on the post-abort alpha. Both are fetched so the
+# disagreement stays visible rather than being resolved silently.
 
 set -eu
 
 REPO="had-nu/3CP"
 SPEC="spec"
 OUT=".3cp"
-FILES="3CP-v2.md SPEC-3CP-V2.md 3CP.md glossary.md"
+FILES="SPEC-3CP-V2.md 3CP-v2.md 3CP.md glossary.md"
+CANON="SPEC-3CP-V2.md"
 
 mkdir -p "$OUT"
 
@@ -45,7 +57,7 @@ if [ "${1:-}" = "--check" ]; then
     exit 1
   fi
   echo "canon cached in $OUT/"
-  grep -c '\[MUST\]' "$OUT/3CP-v2.md" | sed 's/^/  3CP-v2.md MUSTs: /'
+  grep -c '\[MUST\]' "$OUT/$CANON" | sed "s|^|  $CANON MUSTs: |"
   exit 0
 fi
 
@@ -61,6 +73,7 @@ done
 echo
 echo "canon cached in $OUT/"
 echo
-echo "Cite $OUT/3CP-v2.md. Section numbers match the PT file but contents do not."
-echo "Verify every quote before writing it into a comment — see Rule 2 of"
+echo "Cite $OUT/$CANON. It is the normative spec; 3CP-v2.md is a second document that"
+echo "disagrees with it in places — §4.3 (VRF construction) and §6.4 (post-abort alpha)."
+echo "Verify every quote against the canon before writing it into a comment — Rule 2 of"
 echo "docs/VERIFICATION-PLAYBOOK.md."

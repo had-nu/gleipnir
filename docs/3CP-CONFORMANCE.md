@@ -4,9 +4,9 @@
 record that it is not implemented. So that conformance is a claim that can be checked,
 rather than an assertion about code nobody has read against the spec.
 
-**Specification**: `had-nu/3CP`, `spec/3CP-v2.md`, commit `72a5e4b` (2026-10-05).
+**Specification**: `had-nu/3CP`, `spec/SPEC-3CP-V2.md`, at commit `72a5e4b` (2026-10-05).
 Fetch it with `./scripts/fetch-3cp.sh`, which caches it in `.3cp/` (gitignored — the spec
-is canon and a vendored copy drifts). Cite `.3cp/3CP-v2.md`.
+is canon and a vendored copy drifts). Cite `.3cp/SPEC-3CP-V2.md`.
 
 **Why this exists.** The code in this repository cites spec sections in comments, but
 never systematically. Three consecutive defects were diagnosed by reading code rather
@@ -17,24 +17,29 @@ divergence is written down rather than resolved silently in code.
 
 ## Which spec file
 
-`3CP-v2.md` (EN) is the authoritative version. `SPEC-3CP-V2.md` (PT) is the earlier
-translation and is **not** normatively complete:
+`SPEC-3CP-V2.md` is the canonical file. The 3CP README calls it *"Current normative
+specification (v2.0)"* and its structure diagram marks it *"← normative protocol
+specification v2.0 (RFC 2119)"*; `CONTRIBUTING.md` routes every normative change to it.
 
-| Section | PT MUSTs | EN MUSTs | |
+`3CP-v2.md` is a **second, newer document inside the same repository** that contradicts
+the canonical one:
+
+| Section | `SPEC-3CP-V2.md` MUSTs | `3CP-v2.md` MUSTs | |
 |---|---|---|---|
-| §2 | 0 | 1 | diverges |
-| §4 | 4 | 6 | diverges |
+| §2 | 0 | 1 | `3CP-v2.md` adds one |
+| §4 | 4 | 6 | `3CP-v2.md` adds two — and gets §4.3 wrong |
 | §5 | 9 | 9 | agrees |
-| §6 | 5 | **6** | diverges |
-| §7–§17 | equal | equal | agree |
+| §6 | 5 | **6** | `3CP-v2.md` adds the §6.5 metadata MUST |
+| §7–§17 | equal | equal | agree on count |
 
-§6.5 in EN carries a MUST the PT omits: *"Each block MUST contain
-`Metadata["3cp:degraded-block"] = true`"*. The code implements that requirement
-(`prepare.go:139-143`), which means it was implemented from the EN text or from
-judgement, not from the PT.
+Two of those extra requirements are real and the code implements both:
+`Metadata["3cp:degraded-block"] = true` (§6.5, `prepare.go:139-143`) and the two-point
+Elligator sum (§4.3, `vrf.go`). The canonical file expresses §4.3 by reference —
+*"ECVRF-EDWARDS25519-SHA512-Elligator2, conforme RFC 9381"* — which, checked against
+RFC 9380 §3, is the same construction.
 
-**When citing a section, verify the text against `3CP-v2.md`.** Section numbers alone
-are not sufficient — the two files disagree.
+**Cite `SPEC-3CP-V2.md`, and verify the quote.** Section numbers alone are not sufficient:
+the two files agree on numbering and disagree on content in §2, §4, §6 and §6.5.
 
 ---
 
@@ -388,6 +393,80 @@ deployment could enable it and never be noticed by the protocol.
 
 ---
 
+### D10 — the two spec files contradict each other on the VRF construction
+
+**Not a Gleipnir defect.** Recorded because it nearly became one, and because it changes
+which document this file is written against.
+
+`spec/SPEC-3CP-V2.md` §4.3 — the canonical one — says:
+
+> **Algoritmo:** ECVRF-EDWARDS25519-SHA512-Elligator2, conforme RFC 9381.
+
+`spec/3CP-v2.md` §4.3 — the newer file — instead specifies an explicit two-point sum and
+describes it as a departure from *"the single-point map of RFC 9381 §4.1.2"*.
+
+Read against the actual RFCs, the second file's reasoning does not hold:
+
+- RFC 9381 §4.1.2 is **RSA-FDH-VRF Proof to Hash**. It has nothing to do with
+  hash-to-curve. The relevant section is RFC 9381 §5.4.1.2, which selects the
+  hash-to-curve form through `h2c_suite_ID_string`.
+- The two-point sum is **not a departure from the RFC**. It is RFC 9380 §3 `hash_to_curve`
+  verbatim: `hash_to_field(msg, 2)`, map each, add them, clear the cofactor. RFC 9380 also
+  defines a one-point `encode_to_curve`; the two differ in output distribution (uniform
+  versus non-uniform), and ECVRF uses the uniform one.
+
+So both spec files arrive at the same construction — the two-point sum — and the code
+implements it (`vrf.go`, `p0.Add(p0, p1)`). **The conclusion agrees; only the justification
+in `3CP-v2.md` is wrong.**
+
+**Why this matters here.** A reader following `3CP-v2.md`'s framing would expect an
+override — "the spec departs from the RFC, do not correct it toward the RFC" — and a
+comment in this repository said exactly that. It was wrong in a way that would not have
+been caught by any test: the code was right, the reasoning was invented, and it was
+recorded as fact. The accurate statement is that the construction *is* RFC 9380, so
+nothing overrides anything.
+
+**Resolution.** The canonical file is `SPEC-3CP-V2.md` — the 3CP README calls it
+*"Current normative specification (v2.0)"* and `CONTRIBUTING.md` routes every normative
+change to it. `3CP-v2.md` is a second document that disagrees in §2, §4, §6 and §6.5.
+This document is written against the canon; where the second file is quoted, it is
+labelled as such.
+
+**For the spec maintainers.** `3CP-v2.md` §4.3 should either be reconciled with the
+canonical file or retired. As written it invites an implementer to "fix" correct code
+toward a one-point map, which would change gamma for every node and silently change every
+leader election.
+
+---
+
+## Source of truth
+
+The hierarchy is not flat, and getting it wrong is how this file came to cite the wrong
+document once:
+
+```
+3CP RFC                              ← source of truth
+  ↓ must be followed structurally
+spec/SPEC-3CP-V2.md                  ← normative spec; an implementation *attempt*
+  ↓ may exceed, if documented and heavily tested
+Gleipnir                             ← this repository
+```
+
+- Where the **RFC and the spec disagree**, the RFC wins.
+- Where **Gleipnir is more efficient than the spec anticipated**, that is legitimate — but
+  it must be documented and heavily tested *before* being reflected into the RFC. A silent
+  divergence is not an improvement, it is a fork.
+- Correcting the spec is a normative act: issue, documented consensus, rationale section,
+  and updates to `spec/schemas/` and `spec/examples/`. It is never done from this
+  repository.
+
+`spec/3CP-v2.md` is a second document inside the 3CP repository. It is newer, it is not
+the one the README or CONTRIBUTING name as normative, and it contradicts the canonical
+file in §2, §4, §6 and §6.5. It is fetched alongside the canon so the disagreement stays
+visible. See D10.
+
+---
+
 ## How to use this document
 
 Before implementing anything in the consensus path:
@@ -399,9 +478,9 @@ Before implementing anything in the consensus path:
 4. If it does not appear at all, the spec may not cover it. Say that explicitly rather
    than implementing from intuition.
 
-When adding a comment that cites a section, verify the quote against `.3cp/3CP-v2.md`.
-Section numbers match between the PT and EN files but their contents do not (§6.5 is the
-clearest case).
+When adding a comment that cites a section, verify the quote against
+`.3cp/SPEC-3CP-V2.md`. Section numbers match across the spec files but their contents do
+not — §4.3, §6.5 and §6.4 are the three that will bite.
 
 ## Coverage
 

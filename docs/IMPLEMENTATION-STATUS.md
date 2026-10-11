@@ -5,10 +5,15 @@
 > the top blocker. Sections below are otherwise unchanged and still describe `7dfd23d`.
 >
 > **§2.2 below is out of date.** It states that the authoritative specification lives in
-> another repository and is therefore not consultable. `had-nu/3CP` is **public** and
-> `spec/3CP-v2.md` is readable. A conformance map now exists at
-> **`docs/3CP-CONFORMANCE.md`**, which maps each normative requirement to the code and records
-> five open divergences (D1–D5). Use that document for anything touching the consensus path.
+> another repository and is therefore not consultable. `had-nu/3CP` is reachable and
+> `spec/SPEC-3CP-V2.md` is readable; `./scripts/fetch-3cp.sh` caches it locally. A
+> conformance map now exists at **`docs/3CP-CONFORMANCE.md`**, which maps each normative
+> requirement to the code and records ten open divergences (D1–D10). Use that document for
+> anything touching the consensus path.
+>
+> Note that `spec/SPEC-3CP-V2.md` and `spec/3CP-v2.md` are two different documents in that
+> repository and they contradict each other in §2, §4, §6 and §6.5. The former is the one
+> the 3CP README calls normative. `SPEC-3CP-V2.md` is the one to cite. See D10.
 >
 > **Everything in this document is now subject to `VERIFICATION-PLAYBOOK.md`.** That file records
 > three wrong diagnoses in a row on this codebase, each made confidently and each falsified by

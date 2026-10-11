@@ -4,22 +4,39 @@
 // Proof shape and wire format are the RFC's: pi = (Gamma, c, s), three 32-byte
 // scalars/points, so MarshalVRFProof still emits 96 bytes.
 //
-// ## Relation to 3CP §4.3, and where it departs from RFC 9381
+// ## Relation to 3CP §4.3, and to RFC 9380
 //
-// The spec mandates Ristretto255 with suite `ristretto255_XMD:SHA-512_R255MAP_RO_`, and
-// deviates from the RFC in one place that it states twice and calls out as a MUST:
+// The canonical spec (`spec/SPEC-3CP-V2.md` §4.3) says:
 //
-//	**[MUST]** `HashToCurve(alpha)` is computed as ... a 2-point Elligator2 sum ...
-//	This is a 2-point Elligator2 sum, not the single-point map of RFC 9381 §4.1.2.
-//	**[MUST]** Every conformant implementation MUST replicate exactly this 2-point
-//	procedure for interoperability.
+//	**Algoritmo:** ECVRF-EDWARDS25519-SHA512-Elligator2, conforme RFC 9381.
 //
-// `hashToCurve` below does the 2-point sum (`p0.Add(p0, p1)`). An implementation that
-// follows RFC 9381 §4.1.2 literally computes a different point and elects a different
-// leader for the same alpha, because the VRF output — and therefore the whole election —
-// depends on it. **When reading this file, the spec wins over the RFC where they
-// disagree.** That inversion is deliberate and is stated in the spec; do not "correct"
-// it toward the RFC.
+// `hashToCurve` below maps to Ristretto255 with SHA-512 and an Elligator2 map, and the
+// construction it uses is the two-point sum RFC 9380 specifies:
+//
+//	hash_to_curve(msg):
+//	  1. u = hash_to_field(msg, 2)
+//	  2. Q0 = map_to_curve(u[0])
+//	  3. Q1 = map_to_curve(u[1])
+//	  4. R = Q0 + Q1          # point addition
+//	  5. P = clear_cofactor(R)
+//
+// **Do not "simplify" this to a single map.** RFC 9380 defines both `hash_to_curve` (two
+// points, uniform output) and `encode_to_curve` (one point, non-uniform). ECVRF uses the
+// two-point form — RFC 9381 §5.4.1.2 selects it through `h2c_suite_ID_string` — and so does
+// this code. Switching to the single-point map changes the output distribution from
+// uniform to non-uniform, which is a different encoding, and every node's gamma changes,
+// so the network elects a different leader for the same alpha. The failure is silent:
+// proofs still verify, they just verify against a different curve convention.
+//
+// **A second spec file in the same repository contradicts the canonical one here.**
+// `spec/3CP-v2.md` §4.3 instead mandates an explicit two-point sum and describes it as a
+// departure from "the single-point map of RFC 9381 §4.1.2". That characterisation is
+// wrong on two counts: RFC 9381 §4.1.2 is RSA proof-to-hash and has nothing to do with
+// hash-to-curve, and the two-point sum is RFC 9380's own construction, not a deviation
+// from it. The conclusion — use the two-point sum — is the same; the reasoning is not.
+// Where the two spec files disagree, `SPEC-3CP-V2.md` is the one the 3CP README calls
+// normative and the one CONTRIBUTING.md routes changes to. See docs/3CP-CONFORMANCE.md,
+// D10.
 //
 // **[MUST]** Nonce derivation is deterministic via HMAC-SHA512 with the VRF private key as
 // the HMAC key, and the challenge/response follow Schnorr-style construction rather than
