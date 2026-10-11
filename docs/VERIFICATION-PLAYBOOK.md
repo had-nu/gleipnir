@@ -76,12 +76,34 @@ measurement had come first.
 **Lesson**: this is a process failure, not an individual one. It recurs because nothing
 in the workflow forces a measurement before a diagnosis.
 
+### 1.5 The same failure with the specification in hand — the fifth time
+
+The deadlock in item 3.10 was first diagnosed by reading `engine.go` and reasoning about the
+phase order. That reading was wrong: the proposer's quorum check completes, and what fails is
+that validators exhaust their wait for the proposal before it is delivered. Both accounts
+predict the same symptom, which is why reading code could not distinguish them.
+
+The error was not reading the code carelessly. It was **never opening the specification**.
+`docs/IMPLEMENTATION-STATUS.md` §2.2 recorded that 3CP lives in another repository and is
+therefore not consultable. That was written on 2026-10-05 and it stopped being true:
+`had-nu/3CP` is public. §6 of `spec/3CP-v2.md` describes the cycle in six steps, and reading
+it shows immediately that the code's two `RunPreparePhase` calls are not what the spec
+describes, and that `waitForProposal` — whose expiry causes the failure — has no basis in the
+spec at all.
+
+Reading the code was never a substitute for reading the spec. They answer different questions.
+The code says what happens; the spec says what should happen. Only the second can tell you the
+first is wrong.
+
+**Lesson**: open the specification before diagnosing a protocol defect or proposing a fix for
+one. That is Rule 2 below.
+
 ---
 
-## 2. The rule
+## 2. The rules
 
-> **No claim about runtime behaviour may be written down before a named command produced
-> it. If the command is not recorded with the claim, the claim is a hypothesis.**
+> **Rule 1 — No claim about runtime behaviour may be written down before a named command
+> produced it. If the command is not recorded with the claim, it is a hypothesis.**
 
 The named command matters as much as the fact. "The topology converges" is unfalsifiable.
 "`grep -c 'peer connected' <logs>` returned 4 on all five nodes" can be re-run.
@@ -91,6 +113,30 @@ Three things make a claim checkable:
 1. the configuration it was measured under (compose file, override, flags)
 2. the command that produced it
 3. the observation itself, including what it does *not* show
+
+> **Rule 2 — Every change to protocol behaviour cites the 3CP section that governs it.
+> Look the requirement up. Do not infer it from the code.**
+
+The specification is `had-nu/3CP`, `spec/3CP-v2.md`. It is public and readable:
+
+```
+gh api repos/had-nu/3CP/contents/spec/3CP-v2.md --jq '.content' | base64 -d
+```
+
+`docs/3CP-CONFORMANCE.md` maps each section to the code and lists five open divergences
+(D1–D5). Read it before touching the consensus path.
+
+Two rules of use:
+
+- **Verify the quote, not the section number.** `SPEC-3CP-V2.md` (PT) and `3CP-v2.md` (EN)
+  have matching section numbers and differing content — §6.5 in EN carries a MUST the PT
+  omits. Cite `3CP-v2.md`.
+- **If a change is not in the spec, say so explicitly** and justify it on measured
+  behaviour. Adding a timeout the spec does not define is a protocol change, and "it seemed
+  like the right amount" is not a justification.
+
+A reviewer can check every citation against the spec without trusting the author. That is
+the point: the claim does not depend on my confidence.
 
 ---
 
@@ -253,6 +299,8 @@ it measured. Two statements in it should be read with care:
 - It predates any measurement of mDNS on the compose topology. Any inference in it about
   peer discovery being absent is unmeasured and should not be relied on. The measurement
   in §1.3 above supersedes it.
+- **§2.2 states that the 3CP specification is not consultable.** It is public. Use
+  `docs/3CP-CONFORMANCE.md` instead.
 
 ---
 
@@ -266,6 +314,13 @@ For a change to this repository, in order:
 4. Does the topology measurement in §4.1 move in the direction claimed?
 5. Does the conformance count match what the message claims about it?
 6. If the change is a fix, is there a stated residual problem?
+7. **If the change touches the consensus path, does it cite the 3CP section it implements —
+   and does that quote match `3CP-v2.md`?**
+8. **If the change is not described by the spec, is that stated, with the measured
+   justification?**
 
-If (1) or (3) cannot be answered, the change is not ready for review regardless of how
+Items 7 and 8 can be checked without trusting the author: open the cited section and read it.
+If the citation does not hold, the change is not ready regardless of how well it is tested.
+
+If (1), (3) or (7) cannot be answered, the change is not ready for review regardless of how
 good the code is.

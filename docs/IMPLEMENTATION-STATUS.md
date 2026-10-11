@@ -4,6 +4,12 @@
 > **closed**. 3.3 (CI half) is **closed** — see below. A new item, **3.10**, is open and is now
 > the top blocker. Sections below are otherwise unchanged and still describe `7dfd23d`.
 >
+> **§2.2 below is out of date.** It states that the authoritative specification lives in
+> another repository and is therefore not consultable. `had-nu/3CP` is **public** and
+> `spec/3CP-v2.md` is readable. A conformance map now exists at
+> **`docs/3CP-CONFORMANCE.md`**, which maps each normative requirement to the code and records
+> five open divergences (D1–D5). Use that document for anything touching the consensus path.
+>
 > **Everything in this document is now subject to `VERIFICATION-PLAYBOOK.md`.** That file records
 > three wrong diagnoses in a row on this codebase, each made confidently and each falsified by
 > running the code. Read it before acting on anything below, and in particular before trusting
