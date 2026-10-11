@@ -259,6 +259,20 @@ provectl → gRPC API → Consensus Engine → SMT State → Chain Storage
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architectural description, deployment topology, and sub-chain model.
 
+**Contributing.** Gleipnir implements 3CP v2; the specification lives at
+[had-nu/3CP](https://github.com/had-nu/3CP) and wins on any disagreement. Two documents
+govern work on this repository:
+
+- [docs/3CP-CONFORMANCE.md](docs/3CP-CONFORMANCE.md) — each normative requirement mapped to
+  the code that implements it, plus the divergences that are still open. Read before
+  touching the consensus path.
+- [docs/VERIFICATION-PLAYBOOK.md](docs/VERIFICATION-PLAYBOOK.md) — the procedure to follow
+  before and after any change, and the record of how five defects here were misdiagnosed by
+  reading code instead of running it.
+
+Any change to protocol behaviour cites the section it implements, and the citation is
+checked against the specification rather than accepted on trust.
+
 ## Current status
 
 `RunCycle()` supports **single-node** (`NewEngine`) and **multi-node** (`NewEngineWithPeers` + `GossipChannel`) modes. The multi-node path uses ECVRF proposer selection, builds blocks via gossip, verifies SMT root replication, and collects M-of-N Dilithium3 co-signatures. Sub-chains (`SubChainManager`) enable per-service anchoring with cross-chain proofs.

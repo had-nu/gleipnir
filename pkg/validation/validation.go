@@ -1,5 +1,23 @@
 // Package validation provides client-side submission validation.
 // Use this before submitting to avoid round-trips for invalid entries.
+//
+// Two distinct layers meet here, and conflating them is how a mandate gap stays invisible.
+//
+// `ValidateEntry` is the structural check §15.3 describes: *"This half of enforcement is
+// structural: it stops claims of compliance that fail the most basic requirements. It CANNOT
+// detect omitted events, because the protocol never sees an event that was never submitted."*
+// The limits below (hash non-zero, submitter present, label length) are that layer. The spec
+// sets no numeric values for them — they are an implementation choice, not a divergence —
+// and they are enforced identically on every node so that one node's rejection cannot be
+// mistaken for a policy decision.
+//
+// `MandateValidator` is the other layer: §15.3 requires an entry carrying `MandateRef` to
+// be checked against the mandate it names, and requires an entry with no `MandateRef` to be
+// accepted — *"rejecting them would make the mechanism unusable"*.
+//
+// §15.4 is what neither of these can do: *"Omission MUST be cryptographically detectable."*
+// That needs the anchored chain and a time window, not a single entry, and it lives in
+// `compliance_checker.go`.
 package validation
 
 import (

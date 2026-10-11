@@ -1,3 +1,23 @@
+// IPC consensus — gossip interface.
+//
+// The methods map onto §6.2 and §6.3 step by step, and the ordering here is the
+// protocol's, not a convenience:
+//
+//	§6.2 Step 1  PublishVRFProof / GetVRFProofs
+//	             leader election needs a proof from every validator before it can select
+//	§6.2 Step 2  Propose / GetProposed, and Publish / Snapshot for the entries in E
+//	§6.2 Step 3  PublishSig / GetSigs
+//	             "v_j signs H(B) and broadcasts PREPARE-SIG_j"
+//	§6.3 Step 6  PublishFinal / GetFinal
+//	             "The leader broadcasts B_final"
+//
+// A candidate (Propose/GetProposed) and a finalised block (PublishFinal/GetFinal) are
+// kept apart because they are read at different phases and have different trust
+// rules: a candidate is immutable once published, so a proposer cannot equivocate by
+// swapping it after validators start verifying, whereas the finalised block is the
+// leader's commitment and supersedes the candidate. §6.3 Step 5 makes this concrete —
+// `B_final = B || PrepareSigsBitmap || PrepareSigsPayload || CommitSig_leader`, so the
+// final is the candidate plus the fields that only exist after quorum.
 package consensus
 
 import (

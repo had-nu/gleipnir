@@ -76,12 +76,43 @@ measurement had come first.
 **Lesson**: this is a process failure, not an individual one. It recurs because nothing
 in the workflow forces a measurement before a diagnosis.
 
+### 1.5 The same failure with the specification in hand — the fifth time
+
+The deadlock in item 3.10 was first diagnosed by reading `engine.go` and reasoning about the
+phase order. That reading was wrong: the proposer's quorum check completes, and what fails is
+that validators exhaust their wait for the proposal before it is delivered. Both accounts
+predict the same symptom, which is why reading code could not distinguish them.
+
+The error was not reading the code carelessly. It was **never opening the specification**.
+`docs/IMPLEMENTATION-STATUS.md` §2.2 recorded that 3CP lives in another repository and is
+therefore not consultable. That was written on 2026-10-05 and it stopped being true:
+`had-nu/3CP` is reachable, and `./scripts/fetch-3cp.sh` now caches it. §6 of the spec
+describes the cycle in six steps, and reading it shows immediately that the code's two
+`RunPreparePhase` calls are not what the spec describes, and that `waitForProposal` — whose
+expiry causes the failure — has no basis in the spec at all.
+
+It then went further, and the sequence is the argument for this rule: once the spec was open,
+this file cited the **wrong one of two documents** in that repository, called it normative,
+and wrote its reasoning into a code comment as fact. Both documents exist,
+`spec/SPEC-3CP-V2.md` and `spec/3CP-v2.md`, and they contradict each other. The claim
+recorded in the comment — "the spec departs from RFC 9381, do not correct it toward the RFC"
+— was not in either document, and was wrong; checked against RFC 9380 §3, the construction
+in the code *is* RFC 9380. No test would ever have caught that, because the code was right.
+Only reading the RFC as well as the spec did.
+
+Reading the code was never a substitute for reading the spec. They answer different questions.
+The code says what happens; the spec says what should happen. Only the second can tell you the
+first is wrong.
+
+**Lesson**: open the specification before diagnosing a protocol defect or proposing a fix for
+one. That is Rule 2 below.
+
 ---
 
-## 2. The rule
+## 2. The rules
 
-> **No claim about runtime behaviour may be written down before a named command produced
-> it. If the command is not recorded with the claim, the claim is a hypothesis.**
+> **Rule 1 — No claim about runtime behaviour may be written down before a named command
+> produced it. If the command is not recorded with the claim, it is a hypothesis.**
 
 The named command matters as much as the fact. "The topology converges" is unfalsifiable.
 "`grep -c 'peer connected' <logs>` returned 4 on all five nodes" can be re-run.
@@ -91,6 +122,54 @@ Three things make a claim checkable:
 1. the configuration it was measured under (compose file, override, flags)
 2. the command that produced it
 3. the observation itself, including what it does *not* show
+
+> **Rule 2 — Every change to protocol behaviour cites the 3CP section that governs it.
+> Look the requirement up. Do not infer it from the code.**
+
+The specification is `had-nu/3CP`, `spec/SPEC-3CP-V2.md`. It is cached:
+
+```
+./scripts/fetch-3cp.sh            # fetch or refresh into .3cp/
+./scripts/fetch-3cp.sh --check    # verify the cache is present
+```
+
+`.3cp/` is gitignored. The spec is canon; vendoring a second copy into the repository is
+what produces a stale one, and a stale spec is worse than none — a citation drawn from the
+wrong version still looks right.
+
+The hierarchy is not flat:
+
+```
+3CP RFC                              ← source of truth
+  ↓ must be followed structurally
+spec/SPEC-3CP-V2.md                  ← normative spec; an implementation *attempt*
+  ↓ may exceed, if documented and heavily tested
+Gleipnir                             ← this repository
+```
+
+Where the **RFC and the spec disagree, the RFC wins.** Where **Gleipnir is more efficient
+than the spec anticipated**, that is legitimate — but it must be documented and heavily
+tested *before* being reflected into the RFC. A silent divergence is not an improvement,
+it is a fork. Correcting the spec is a normative act handled in the 3CP repository, never
+from here.
+
+`docs/3CP-CONFORMANCE.md` maps each section to the code and lists the open divergences
+(D1–D10). Read it before touching the consensus path.
+
+Three rules of use:
+
+- **Cite `SPEC-3CP-V2.md`, not `3CP-v2.md`.** Both exist in the 3CP repository and they
+  contradict each other in §2, §4, §6 and §6.5. The README and CONTRIBUTING name
+  `SPEC-3CP-V2.md` as normative. See D10.
+- **Verify the quote against the RFCs as well as the spec.** The spec cites RFC 9380 and
+  RFC 9381 for the VRF, and its explanation of the construction was wrong. A citation that
+  reads plausibly is not a citation that was checked.
+- **If a change is not in the spec, say so explicitly** and justify it on measured
+  behaviour. Adding a timeout the spec does not define is a protocol change, and "it seemed
+  like the right amount" is not a justification.
+
+A reviewer can check every citation against the spec without trusting the author. That is
+the point: the claim does not depend on my confidence.
 
 ---
 
@@ -253,6 +332,12 @@ it measured. Two statements in it should be read with care:
 - It predates any measurement of mDNS on the compose topology. Any inference in it about
   peer discovery being absent is unmeasured and should not be relied on. The measurement
   in §1.3 above supersedes it.
+- **§2.2's conclusion no longer holds, but its reason was right.** It says the
+  specification is not consultable because it lives in another repository. That is still
+  why it was never read. It *is* reachable — `./scripts/fetch-3cp.sh` caches it — but note
+  that the 3CP repository's own `README.md` and `CONTRIBUTING.md` describe it as **private
+  and pre-publication**. It is reachable here only because the authenticated `gh` account
+  has access. Do not describe it as public. Use `docs/3CP-CONFORMANCE.md`.
 
 ---
 
@@ -266,6 +351,13 @@ For a change to this repository, in order:
 4. Does the topology measurement in §4.1 move in the direction claimed?
 5. Does the conformance count match what the message claims about it?
 6. If the change is a fix, is there a stated residual problem?
+7. **If the change touches the consensus path, does it cite the 3CP section it implements —
+   and does that quote match `SPEC-3CP-V2.md`, and the RFCs it in turn cites?**
+8. **If the change is not described by the spec, is that stated, with the measured
+   justification?**
 
-If (1) or (3) cannot be answered, the change is not ready for review regardless of how
+Items 7 and 8 can be checked without trusting the author: open the cited section and read it.
+If the citation does not hold, the change is not ready regardless of how well it is tested.
+
+If (1), (3) or (7) cannot be answered, the change is not ready for review regardless of how
 good the code is.

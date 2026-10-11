@@ -12,6 +12,21 @@ import (
 // IncrementalLaplacian computes λ₁ (Fiedler eigenvalue) efficiently
 // by caching Cholesky factorization of (L + μI) and only recomputing
 // when the graph topology changes.
+//
+// §11.2 is the requirement this satisfies:
+//
+//	**[MUST]** If no nodes were added or removed between consecutive cycles, and only
+//	`Status` values of existing nodes changed, the implementation MUST use rank-one
+//	update on the Laplacian instead of full reconstruction.
+//
+// with the three permitted grounds for full recomputation:
+//
+//	**[MUST]** Full Laplacian recomputation is only permitted when: a node is added or
+//	removed; `LambdaInterval` cycles have passed without full recomputation; or state
+//	was marked `dirty` by structural change.
+//
+// `isDirty` and `lastGraphHash` are how the first is detected without being told — the
+// engine passes a node list, and a change in membership changes its hash.
 type IncrementalLaplacian struct {
 	// Cached state
 	laplacian     *mat.SymDense  // Current Laplacian matrix

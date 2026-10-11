@@ -39,10 +39,34 @@ type UIDZeroSoulbound struct {
 }
 
 // NewUIDZero derives a UID0 v2.0 identity from entropy and NetworkID.
-// entropySource: min 32 bytes of entropy (e.g., from HSM, KMS, or CSPRNG)
-// networkID: 32-byte BLAKE3 hash of genesis block (per spec §3.1)
-// simulated: if true, uses deterministic test keys (for testing only) - entropy check is skipped
-// contractHash: optional pre-computed contract hash (if derived from contract); if zero, will be derived from entropy
+//
+// Implements §14.2:
+//
+//	**[MUST]** The 32-byte seed for identity derivation is:
+//	    seed = HKDF-SHA256(salt = NetworkID, info = "3cp-uid0-v2", ikm = entropySource)
+//
+// Two divergences, both recorded in docs/3CP-CONFORMANCE.md as D8 and D9.
+//
+// **D8 — the info strings are not the spec's.** §14.2 names `"3cp-uid0-v2"` as the HKDF
+// info for the 32-byte seed. This function derives the PRK correctly from the spec's salt
+// and IKM, then expands it under per-key info strings of its own — "3cp:v2:dilithium3",
+// "3cp:v2:vrf", "3cp:v2:rootid", "3cp:v2:contract". Two implementations that agree on the
+// PRK and disagree on the info derive different identities, which is the same
+// interoperability break §4.3's two-point Elligator MUST exists to prevent, one layer up.
+// Every UID0 already generated under these strings is affected.
+//
+// **D9 — the entropy floor is a length check, not an entropy estimate.** §14.2:
+// *"[MUST] `entropySource` MUST contain at least 128 bits of effective entropy.
+// Implementations SHOULD reject `entropySource` with estimated entropy < 80 bits."*
+// The code accepts any string of 32 bytes or more, which a caller can satisfy with a
+// repeated character. The `simulated` flag exists for deterministic test keys and skips the
+// check entirely; that is the escape hatch the compose topology relies on, via
+// `IPC_ALLOW_SIMULATED_IDENTITIES`.
+//
+// networkID: the 32-byte BLAKE3 hash of the genesis block (§14.1, not §3.1 — §3.1 is the
+// entity list). Its immutability for the chain's lifetime is the caller's to guarantee.
+// simulated: deterministic test keys, for testing only; skips the length check.
+// contractHash: optional pre-computed contract hash; derived from entropy when zero.
 func NewUIDZero(entropySource string, networkID [32]byte, simulated bool, contractHashOpt ...[32]byte) (*UIDZeroSoulbound, error) {
 	if !simulated && len(entropySource) < 32 {
 		return nil, ErrInvalidEntropy
@@ -50,6 +74,9 @@ func NewUIDZero(entropySource string, networkID [32]byte, simulated bool, contra
 
 	// HKDF-SHA256: PRK = HMAC-SHA256(salt=NetworkID, IKM=entropySource)
 	// Then expand for each key: OKM = HMAC-SHA256(PRK, info || counter)
+	//
+	// The PRK follows §14.2's salt and IKM. The info strings below do not follow §14.2's;
+	// see D8 above.
 	prk := hkdfExtract(networkID[:], []byte(entropySource))
 
 	// Derive keys with distinct info strings

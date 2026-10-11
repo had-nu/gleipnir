@@ -23,3 +23,9 @@ docs/internal/
 # Docker files (local only - not tracked)
 Dockerfile
 docker-compose*.yml
+
+# The 3CP specification is canon and lives at github.com/had-nu/3CP. It is NOT vendored
+# here: a second copy drifts from the first, and a stale copy is worse than none — the
+# two language versions already disagree (§2, §4, §6), so reading the wrong one silently
+# yields a wrong citation. Fetch it instead; see docs/3CP-CONFORMANCE.md.
+.3cp/

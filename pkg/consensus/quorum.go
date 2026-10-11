@@ -1,4 +1,9 @@
 // IPC quorum — M-of-N signing with Dilithium3.
+//
+// Implements Appendix B.2 `VerifyQuorumBatch`. The `used` set is what makes this
+// M-of-N over *distinct validators* rather than a count of signatures: §6.3 Step 6
+// requires each signature in `PrepareSigsPayload` to verify "against the corresponding
+// validator's public key", so one validator presenting N signatures contributes 1.
 package consensus
 
 import (
@@ -11,6 +16,11 @@ import (
 var ErrQuorumNotMet = errors.New("IPC quorum: required signatures not met")
 
 // VerifyQuorum verifies that at least RequiredSigs valid signatures exist.
+//
+// Appendix B.2 `VerifyQuorumBatch`, with the signer-lookup inverted: the spec iterates
+// signatures and searches the validator set for each, and this iterates the same pairs in
+// the same order, breaking on first match so a key is consumed at most once.
+//
 // sigs: slice of signatures (any order)
 // pubKeys: slice of validator public keys (any order)
 // quorum: quorum configuration (TotalValidators, RequiredSigs)

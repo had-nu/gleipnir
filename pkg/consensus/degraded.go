@@ -1,4 +1,19 @@
 // Degraded mode handling for N < MinValidators.
+//
+// Implements §6.5, which is three requirements rather than one:
+//
+//   - **[MUST]** "If `N < 4`, the protocol operates in `degraded` mode: `Q = 1` (any single
+//     signature suffices)."
+//   - **[MUST]** "Each block MUST contain `Metadata["3cp:degraded-block"] = true`."
+//   - **[MUST]** "Exiting `degraded` mode requires `N >= 4` and `GraceCycles` consecutive
+//     cycles (default: 10) with normal quorum."
+//
+// The threshold is `MinValidators`, not a literal 4, so a mandate can move it. The spec
+// fixes the default at 4 and §15.5 forbids treating a mandate as satisfied by less than
+// its own rules require, but nothing in the spec forbids configuring the threshold.
+//
+// Note that §6.5 governs block finality only. A mandate's anchoring obligations are
+// unaffected by degraded mode (§15.5) and are not weakened here.
 package consensus
 
 import (
@@ -10,8 +25,10 @@ import (
 )
 
 // DegradedMode handles consensus when N < MinValidators.
-// In degraded mode, finality is 1-of-N (any single signature suffices).
-// Blocks carry the label "3cp:degraded-block" in Metadata.
+//
+// §6.5: in degraded mode finality is 1-of-N — "any single signature suffices" — and
+// every block carries `Metadata["3cp:degraded-block"]`, which lightclient.VerifyBlock
+// enforces on the verification side as a third party would.
 type DegradedMode struct {
 	MinValidators     uint64 // From mandate (default: 4)
 	GraceCycles       uint64 // From mandate (default: 10)
