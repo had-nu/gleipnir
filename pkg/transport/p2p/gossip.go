@@ -149,7 +149,10 @@ func loadOrGenerateKey(path string) (crypto.PrivKey, error) {
 		return privKey, nil
 	}
 
-	data, err := os.ReadFile(path)
+	// #nosec G304 -- path is the operator's own --p2p-key flag. The file it names is
+	// this node's transport identity, and reading it is what persistence means here;
+	// no untrusted input reaches this path.
+	data, err := os.ReadFile(path) //nolint:gosec
 	switch {
 	case err == nil:
 		privKey, err := crypto.UnmarshalPrivateKey(data)
