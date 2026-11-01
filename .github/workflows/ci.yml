@@ -255,7 +255,7 @@ jobs:
           } | tee topology-report.txt
 
       - name: Upload topology report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: topology-report
@@ -268,7 +268,7 @@ jobs:
             run --rm conformance-test 2>&1 | tee conformance-output.txt || true
 
       - name: Upload conformance output
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: conformance-output
