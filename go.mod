@@ -18,7 +18,7 @@ require (
 	google.golang.org/grpc v1.86.0-dev
 	google.golang.org/protobuf v1.36.12
 	gopkg.in/yaml.v3 v3.0.1
-	lukechampine.com/blake3 v1.4.1
+	lukechampine.com/blake3 v1.5.1
 )
 
 require (
